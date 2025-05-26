@@ -971,11 +971,20 @@ class CausalAnalyzer:
             return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "OpenAI not available"}
         
         try:
-            if not api_key and not st.secrets.get("OPENAI_API_KEY"):
+            # Check if API key is provided or available
+            effective_api_key = api_key
+            if not effective_api_key:
+                try:
+                    effective_api_key = st.secrets.get("OPENAI_API_KEY", "")
+                except Exception:
+                    effective_api_key = ""
+            
+            if not effective_api_key:
                 st.error("Please provide an OpenAI API key to use AI features")
                 return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No API key provided"}
             
-            client = init_openai(api_key)
+            # Set the API key
+            openai.api_key = effective_api_key
             
             prompt = f"""
             Given a dataset with columns: {', '.join(columns)}
@@ -997,8 +1006,8 @@ class CausalAnalyzer:
             Respond only with valid JSON.
             """
             
-            response = client.chat.completions.create(
-                model="gpt-4",
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",  # Changed from gpt-4 to gpt-3.5-turbo
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
@@ -1009,7 +1018,7 @@ class CausalAnalyzer:
             
         except Exception as e:
             st.error(f"Error generating constraints: {str(e)}")
-            return {"forbidden_edges": [], "temporal_order": [], "explanation": "No constraints generated"}
+            return {"forbidden_edges": [], "temporal_order": [], "explanation": "Error generating constraints - check API key"}
     
     def explain_results_with_llm(self, ate_results: Dict, treatment: str, outcome: str, api_key: str = None) -> str:
         """Use LLM to explain causal analysis results"""
@@ -1017,10 +1026,34 @@ class CausalAnalyzer:
             return "OpenAI package not available. Cannot generate AI explanations."
         
         try:
-            if not api_key and not st.secrets.get("OPENAI_API_KEY"):
-                return "OpenAI API key required for AI explanations. Please provide your API key in the sidebar."
+            # Check if API key is provided or available
+            effective_api_key = api_key
+            if not effective_api_key:
+                try:
+                    effective_api_key = st.secrets.get("OPENAI_API_KEY", "")
+                except Exception:
+                    effective_api_key = ""
             
-            client = init_openai(api_key)
+            if not effective_api_key:
+                return """
+**AI Analysis Unavailable**
+
+To get AI-powered insights, please:
+1. Enter your OpenAI API key in the sidebar, OR
+2. Create a `.streamlit/secrets.toml` file with your API key
+
+**Manual Analysis Summary:**
+- Treatment Effect: {:.4f}
+- This suggests a {} causal relationship
+- Consider validating with controlled experiments
+- Monitor the outcome variable if implementing changes
+                """.format(
+                    ate_results.get('consensus_estimate', 0),
+                    'strong' if abs(ate_results.get('consensus_estimate', 0)) > 0.1 else 'moderate'
+                )
+            
+            # Set the API key and make the request
+            openai.api_key = effective_api_key
             
             prompt = f"""
             Explain the following causal analysis results in business terms:
@@ -1040,8 +1073,8 @@ class CausalAnalyzer:
             Keep it concise and business-friendly.
             """
             
-            response = client.chat.completions.create(
-                model="gpt-4",
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",  # Changed from gpt-4 to gpt-3.5-turbo
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
@@ -1049,7 +1082,44 @@ class CausalAnalyzer:
             return response.choices[0].message.content
             
         except Exception as e:
-            return f"Unable to generate explanation: {str(e)}"
+            # Provide helpful error message and fallback analysis
+            error_msg = str(e)
+            
+            if "api_key" in error_msg.lower() or "auth" in error_msg.lower() or "404" in error_msg:
+                return """
+**API Key Error**
+
+Please check your OpenAI API key:
+1. Make sure it's correctly entered in the sidebar
+2. Verify the key is valid and has credits available
+3. Check that the key has access to GPT-3.5-turbo
+
+**Fallback Analysis:**
+Your causal analysis shows a treatment effect of {:.4f}. This indicates that changing {} by 1 unit leads to a {:.4f} unit change in {}. 
+{}
+                """.format(
+                    ate_results.get('consensus_estimate', 0),
+                    treatment,
+                    ate_results.get('consensus_estimate', 0),
+                    outcome,
+                    "This is a strong effect worth investigating further." if abs(ate_results.get('consensus_estimate', 0)) > 0.1 else "This is a moderate effect that may be worth monitoring."
+                )
+            else:
+                return f"""
+**AI Analysis Error**
+
+Unable to generate AI explanation due to: {error_msg}
+
+**Manual Summary:**
+- **Effect Size:** {ate_results.get('consensus_estimate', 'N/A'):.4f}
+- **Interpretation:** {ate_results.get('interpretation', 'No interpretation available')}
+- **Recommendation:** {ate_results.get('recommendation', 'No recommendation available')}
+
+**Next Steps:**
+1. Review the statistical results above
+2. Consider the practical significance of the effect size
+3. Plan validation experiments if the effect seems meaningful
+                """
 
 # Initialize analyzer
 @st.cache_resource
