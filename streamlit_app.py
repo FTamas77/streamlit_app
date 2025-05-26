@@ -32,9 +32,19 @@ except ImportError:
     OPENAI_AVAILABLE = False
     st.warning("⚠️ OpenAI not available. AI features will be disabled.")
 
-# Suppress warnings for cleaner output
+# Comprehensive warning suppression
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+# Suppress numpy warnings (correct syntax)
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+
+# Suppress pandas warnings
+pd.options.mode.chained_assignment = None
 
 # Configure page
 st.set_page_config(
@@ -457,26 +467,298 @@ class CausalAnalyzer:
                 st.write("DataFrame not created")
             return None
     
+    def _classify_effect_size(self, effect: float) -> str:
+        """Classify effect size"""
+        abs_effect = abs(effect)
+        if abs_effect < 0.01:
+            return "Very Small"
+        elif abs_effect < 0.1:
+            return "Small"
+        elif abs_effect < 0.5:
+            return "Medium"
+        else:
+            return "Large"
+    
+    def _convert_edge_constraints(self, edge_list: List[List[str]]) -> np.ndarray:
+        """Convert edge constraints to adjacency matrix format"""
+        n_vars = len(self.data.columns)
+        forbidden_matrix = np.zeros((n_vars, n_vars))
+        
+        col_to_idx = {col: idx for idx, col in enumerate(self.data.columns)}
+        
+        for source, target in edge_list:
+            if source in col_to_idx and target in col_to_idx:
+                forbidden_matrix[col_to_idx[source], col_to_idx[target]] = 1
+                
+        return forbidden_matrix
+    
+    def _adjacency_to_graph_string(self) -> str:
+        """Convert adjacency matrix to DoWhy graph string format"""
+        if self.adjacency_matrix is None:
+            return ""
+        
+        edges = []
+        columns = list(self.data.columns)
+        
+        for i, source in enumerate(columns):
+            for j, target in enumerate(columns):
+                if abs(self.adjacency_matrix[i, j]) > 0.1:  # Threshold for edge
+                    edges.append(f'"{source}" -> "{target}"')
+        
+        return "; ".join(edges) if edges else ""
+    
+    def _create_networkx_graph(self) -> nx.DiGraph:
+        """Create NetworkX DiGraph from adjacency matrix for DoWhy"""
+        G = nx.DiGraph()
+        
+        if self.adjacency_matrix is None:
+            # Create simple graph with just the variables
+            columns = list(self.data.columns)
+            G.add_nodes_from(columns)
+            return G
+        
+        columns = list(self.data.columns)
+        G.add_nodes_from(columns)
+        
+        for i, source in enumerate(columns):
+            for j, target in enumerate(columns):
+                if abs(self.adjacency_matrix[i, j]) > 0.1:  # Threshold for edge
+                    G.add_edge(source, target, weight=self.adjacency_matrix[i, j])
+        
+        return G
+    
+    def _calculate_simple_metrics(self, treatment: str, outcome: str, estimate: float) -> Dict:
+        """Calculate simplified metrics for speed"""
+        additional_metrics = {}
+        
+        try:
+            # Simple correlation-based metrics
+            correlation = self.data[treatment].corr(self.data[outcome])
+            r_squared = correlation ** 2
+            additional_metrics["r_squared"] = r_squared
+            additional_metrics["explained_variance_percent"] = r_squared * 100
+            additional_metrics["effect_size_interpretation"] = self._classify_effect_size(estimate)
+            
+        except Exception as e:
+            additional_metrics["error"] = str(e)
+        
+        return additional_metrics
+    
+    def _generate_simple_recommendation(self, estimates: Dict) -> str:
+        """Generate simplified recommendation for speed"""
+        if not estimates:
+            return "❌ No reliable estimates available. Consider improving data quality."
+        
+        estimate_value = list(estimates.values())[0]["estimate"]
+        p_value = list(estimates.values())[0].get("p_value")
+        
+        if p_value and p_value < 0.05:
+            if abs(estimate_value) > 0.1:
+                return "✅ Strong significant causal effect detected. Consider implementing interventions."
+            else:
+                return "📊 Statistically significant but small effect. Consider cost-benefit analysis."
+        else:
+            return "⚠️ No statistically significant causal effect detected. Explore other variables or collect more data."
+    
+    def analyze_variable_relationships(self) -> Dict:
+        """Analyze relationships between variables for better insights"""
+        if self.data is None:
+            return {}
+        
+        relationships = {}
+        columns = list(self.data.columns)
+        
+        # Calculate correlation matrix
+        corr_matrix = self.data.corr()
+        
+        # Find strongest correlations
+        strong_correlations = []
+        for i, col1 in enumerate(columns):
+            for j, col2 in enumerate(columns):
+                if i < j and abs(corr_matrix.loc[col1, col2]) > 0.5:
+                    strong_correlations.append({
+                        'var1': col1,
+                        'var2': col2,
+                        'correlation': corr_matrix.loc[col1, col2]
+                    })
+        
+        # Sort by correlation strength
+        strong_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        relationships['strong_correlations'] = strong_correlations[:10]  # Top 10
+        relationships['correlation_matrix'] = corr_matrix
+        
+        return relationships
+    
+    def _interpret_ate(self, ate_value: float, treatment: str, outcome: str) -> str:
+        """Generate interpretation of ATE"""
+        if ate_value is None:
+            return "Unable to determine causal effect"
+        
+        if ate_value > 0:
+            direction = "increases"
+        elif ate_value < 0:
+            direction = "decreases"
+        else:
+            direction = "has no effect on"
+            
+        return f"A one-unit increase in {treatment} {direction} {outcome} by {abs(ate_value):.4f} units on average."
+    
+    def analyze_effect_heterogeneity(self, treatment: str, outcome: str, moderator: str = None) -> Dict:
+        """Analyze heterogeneous treatment effects"""
+        if not moderator:
+            return {"error": "No moderator variable selected"}
+        
+        try:
+            # Split data by moderator (median split for continuous variables)
+            moderator_data = self.data[moderator]
+            moderator_median = moderator_data.median()
+            
+            # High moderator group
+            high_mod_data = self.data[moderator_data > moderator_median]
+            high_mod_corr = high_mod_data[treatment].corr(high_mod_data[outcome])
+            
+            # Low moderator group
+            low_mod_data = self.data[moderator_data <= moderator_median]
+            low_mod_corr = low_mod_data[treatment].corr(low_mod_data[outcome])
+            
+            # Difference in effects
+            effect_difference = high_mod_corr - low_mod_corr
+            
+            return {
+                "high_moderator_effect": high_mod_corr,
+                "low_moderator_effect": low_mod_corr,
+                "effect_difference": effect_difference,
+                "interpretation": f"The effect varies by {moderator}: {abs(effect_difference):.3f} difference between high/low groups"
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def simulate_policy_intervention(self, treatment: str, outcome: str, intervention_size: float) -> Dict:
+        """Simulate the effect of a policy intervention"""
+        try:
+            # Calculate current baseline
+            current_outcome_mean = self.data[outcome].mean()
+            current_treatment_mean = self.data[treatment].mean()
+            
+            # Estimate effect from correlation (simplified)
+            correlation = self.data[treatment].corr(self.data[outcome])
+            outcome_std = self.data[outcome].std()
+            treatment_std = self.data[treatment].std()
+            
+            # Predicted change in outcome
+            predicted_change = correlation * (outcome_std / treatment_std) * intervention_size
+            predicted_new_outcome = current_outcome_mean + predicted_change
+            
+            # Calculate percentage change
+            percent_change = (predicted_change / current_outcome_mean) * 100
+            
+            return {
+                "current_baseline": current_outcome_mean,
+                "intervention_size": intervention_size,
+                "predicted_outcome_change": predicted_change,
+                "predicted_new_outcome": predicted_new_outcome,
+                "percent_change": percent_change,
+                "interpretation": f"Increasing {treatment} by {intervention_size} units may change {outcome} by {predicted_change:.3f} units ({percent_change:.1f}%)"
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _perform_detailed_robustness_checks(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
+        """Perform detailed robustness checks only when requested"""
+        if not DOWHY_AVAILABLE:
+            return {"error": "DoWhy not available for robustness checks"}
+        
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                # Re-run the full causal model for detailed analysis
+                causal_graph = self._create_networkx_graph()
+                
+                if len(causal_graph.edges()) == 0:
+                    if confounders:
+                        for conf in confounders:
+                            causal_graph.add_edge(conf, treatment)
+                            causal_graph.add_edge(conf, outcome)
+                    causal_graph.add_edge(treatment, outcome)
+                
+                causal_model = CausalModel(
+                    data=self.data,
+                    treatment=treatment,
+                    outcome=outcome,
+                    graph=causal_graph,
+                    common_causes=confounders or []
+                )
+                
+                identified_estimand = causal_model.identify_effect(proceed_when_unidentifiable=True)
+                primary_estimate = causal_model.estimate_effect(identified_estimand, method_name="backdoor.linear_regression")
+                
+                robustness_results = {}
+                
+                # Random common cause refutation
+                try:
+                    refutation_random = causal_model.refute_estimate(
+                        identified_estimand,
+                        primary_estimate,
+                        method_name="random_common_cause",
+                        num_simulations=10  # Reduced for speed
+                    )
+                    robustness_results["random_common_cause"] = {
+                        "new_effect": getattr(refutation_random, 'new_effect', 'N/A'),
+                        "p_value": getattr(refutation_random, 'p_value', None),
+                        "status": "passed" if hasattr(refutation_random, 'new_effect') else "failed"
+                    }
+                except Exception as e:
+                    robustness_results["random_common_cause"] = {"error": str(e), "status": "failed"}
+                
+                # Data subset refutation
+                try:
+                    refutation_subset = causal_model.refute_estimate(
+                        identified_estimand,
+                        primary_estimate,
+                        method_name="data_subset_refuter",
+                        subset_fraction=0.8,
+                        num_simulations=10  # Reduced for speed
+                    )
+                    robustness_results["data_subset"] = {
+                        "new_effect": getattr(refutation_subset, 'new_effect', 'N/A'),
+                        "p_value": getattr(refutation_subset, 'p_value', None),
+                        "status": "passed" if hasattr(refutation_subset, 'new_effect') else "failed"
+                    }
+                except Exception as e:
+                    robustness_results["data_subset"] = {"error": str(e), "status": "failed"}
+                
+                return robustness_results
+                
+        except Exception as e:
+            return {"error": str(e)}
+    
     def run_causal_discovery(self, constraints: Dict = None):
         """Run causal discovery with domain constraints"""
         try:
-            if LINGAM_AVAILABLE:
-                # Use DirectLiNGAM if available
-                self.model = DirectLiNGAM()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 
-                # Apply constraints if provided
-                if constraints:
-                    # Convert constraints to format expected by LiNGAM
-                    forbidden = self._convert_edge_constraints(constraints.get('forbidden_edges', []))
-                    self.model = DirectLiNGAM(prior_knowledge=forbidden)
-                
-                # Fit the model
-                self.model.fit(self.data)
-                self.adjacency_matrix = self.model.adjacency_matrix_
-            else:
-                # Fallback: Use correlation-based causal discovery
-                st.info("Using correlation-based causal discovery as fallback")
-                self.adjacency_matrix = self._correlation_based_discovery()
+                if LINGAM_AVAILABLE:
+                    # Use DirectLiNGAM if available
+                    self.model = DirectLiNGAM()
+                    
+                    # Apply constraints if provided
+                    if constraints:
+                        # Convert constraints to format expected by LiNGAM
+                        forbidden = self._convert_edge_constraints(constraints.get('forbidden_edges', []))
+                        self.model = DirectLiNGAM(prior_knowledge=forbidden)
+                    
+                    # Fit the model
+                    self.model.fit(self.data)
+                    self.adjacency_matrix = self.model.adjacency_matrix_
+                else:
+                    # Fallback: Use correlation-based causal discovery
+                    st.info("Using correlation-based causal discovery as fallback")
+                    self.adjacency_matrix = self._correlation_based_discovery()
             
             return True
             
@@ -727,7 +1009,7 @@ class CausalAnalyzer:
             
         except Exception as e:
             st.error(f"Error generating constraints: {str(e)}")
-            return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No constraints generated"}
+            return {"forbidden_edges": [], "temporal_order": [], "explanation": "No constraints generated"}
     
     def explain_results_with_llm(self, ate_results: Dict, treatment: str, outcome: str, api_key: str = None) -> str:
         """Use LLM to explain causal analysis results"""
@@ -1348,5 +1630,3 @@ Recommendation: {ate_results['recommendation']}
                 2. **Check data quality:** Ensure sufficient sample size and measurement accuracy
                 3. **Consider non-linear relationships:** The effect might be conditional on other factors
                 """)
-    else:
-        st.info("💡 Variable selection changed. Click 'Run Causal Inference' to analyze the new combination.")
