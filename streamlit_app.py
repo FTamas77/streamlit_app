@@ -2,20 +2,39 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
-from lingam import DirectLiNGAM
 import numpy as np
-import dowhy
-from dowhy import CausalModel
-import openai
 import json
 from typing import Dict, List, Tuple
 import plotly.graph_objects as go
 import plotly.express as px
 import warnings
 
-# Suppress DoWhy warnings for cleaner output
-warnings.filterwarnings('ignore', category=FutureWarning, module='dowhy')
-warnings.filterwarnings('ignore', category=UserWarning, module='dowhy')
+# Try to import optional dependencies with fallbacks
+try:
+    from lingam import DirectLiNGAM
+    LINGAM_AVAILABLE = True
+except ImportError:
+    LINGAM_AVAILABLE = False
+    st.warning("⚠️ LiNGAM not available. Causal discovery will use correlation-based methods.")
+
+try:
+    import dowhy
+    from dowhy import CausalModel
+    DOWHY_AVAILABLE = True
+except ImportError:
+    DOWHY_AVAILABLE = False
+    st.warning("⚠️ DoWhy not available. Using simplified causal inference methods.")
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    st.warning("⚠️ OpenAI not available. AI features will be disabled.")
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
 
 # Configure page
 st.set_page_config(
@@ -28,11 +47,14 @@ st.set_page_config(
 @st.cache_resource
 def init_openai(api_key=None):
     # Use provided API key or get from secrets
-    if api_key:
-        openai.api_key = api_key
+    if OPENAI_AVAILABLE:
+        if api_key:
+            openai.api_key = api_key
+        else:
+            openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
+        return openai
     else:
-        openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    return openai
+        return None
 
 class CausalAnalyzer:
     """Main class for causal analysis pipeline"""
@@ -435,261 +457,239 @@ class CausalAnalyzer:
                 st.write("DataFrame not created")
             return None
     
-    def generate_domain_constraints(self, columns: List[str], domain_context: str, api_key: str = None) -> Dict:
-        """Use LLM to generate domain-specific constraints"""
-        try:
-            if not api_key and not st.secrets.get("OPENAI_API_KEY"):
-                st.error("Please provide an OpenAI API key to use AI features")
-                return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No API key provided"}
-            
-            client = init_openai(api_key)
-            
-            prompt = f"""
-            Given a dataset with columns: {', '.join(columns)}
-            Domain context: {domain_context}
-            
-            Generate domain constraints for causal discovery in JSON format:
-            {{
-                "forbidden_edges": [["source", "target"], ...],
-                "required_edges": [["source", "target"], ...],
-                "temporal_order": ["earliest_var", "middle_var", "latest_var", ...],
-                "explanation": "Brief explanation of constraints"
-            }}
-            
-            Consider:
-            1. Temporal relationships (causes must precede effects)
-            2. Domain knowledge (what relationships make sense)
-            3. Physical/logical impossibilities
-            
-            Respond only with valid JSON.
-            """
-            
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
-            )
-            
-            constraints = json.loads(response.choices[0].message.content)
-            self.domain_constraints = constraints
-            return constraints
-            
-        except Exception as e:
-            st.error(f"Error generating constraints: {str(e)}")
-            return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No constraints generated"}
-    
     def run_causal_discovery(self, constraints: Dict = None):
         """Run causal discovery with domain constraints"""
         try:
-            # Initialize DirectLiNGAM model
-            self.model = DirectLiNGAM()
-            
-            # Apply constraints if provided
-            if constraints:
-                # Convert constraints to format expected by LiNGAM
-                forbidden = self._convert_edge_constraints(constraints.get('forbidden_edges', []))
-                self.model = DirectLiNGAM(prior_knowledge=forbidden)
-            
-            # Fit the model
-            self.model.fit(self.data)
-            self.adjacency_matrix = self.model.adjacency_matrix_
+            if LINGAM_AVAILABLE:
+                # Use DirectLiNGAM if available
+                self.model = DirectLiNGAM()
+                
+                # Apply constraints if provided
+                if constraints:
+                    # Convert constraints to format expected by LiNGAM
+                    forbidden = self._convert_edge_constraints(constraints.get('forbidden_edges', []))
+                    self.model = DirectLiNGAM(prior_knowledge=forbidden)
+                
+                # Fit the model
+                self.model.fit(self.data)
+                self.adjacency_matrix = self.model.adjacency_matrix_
+            else:
+                # Fallback: Use correlation-based causal discovery
+                st.info("Using correlation-based causal discovery as fallback")
+                self.adjacency_matrix = self._correlation_based_discovery()
             
             return True
             
         except Exception as e:
             st.error(f"Error in causal discovery: {str(e)}")
-            return False
+            # Try fallback method
+            try:
+                self.adjacency_matrix = self._correlation_based_discovery()
+                st.warning("Used fallback correlation-based method")
+                return True
+            except:
+                return False
     
-    def _convert_edge_constraints(self, edge_list: List[List[str]]) -> np.ndarray:
-        """Convert edge constraints to adjacency matrix format"""
+    def _correlation_based_discovery(self) -> np.ndarray:
+        """Fallback causal discovery using correlation analysis"""
+        corr_matrix = self.data.corr().abs()
         n_vars = len(self.data.columns)
-        forbidden_matrix = np.zeros((n_vars, n_vars))
         
-        col_to_idx = {col: idx for idx, col in enumerate(self.data.columns)}
+        # Create adjacency matrix based on strong correlations
+        adjacency = np.zeros((n_vars, n_vars))
+        threshold = 0.3  # Correlation threshold for edges
         
-        for source, target in edge_list:
-            if source in col_to_idx and target in col_to_idx:
-                forbidden_matrix[col_to_idx[source], col_to_idx[target]] = 1
-                
-        return forbidden_matrix
-    
-    def _adjacency_to_graph_string(self) -> str:
-        """Convert adjacency matrix to DoWhy graph string format"""
-        if self.adjacency_matrix is None:
-            return ""
+        for i in range(n_vars):
+            for j in range(n_vars):
+                if i != j and corr_matrix.iloc[i, j] > threshold:
+                    # Simple heuristic: higher variance variable influences lower variance
+                    var_i = self.data.iloc[:, i].var()
+                    var_j = self.data.iloc[:, j].var()
+                    if var_i > var_j:
+                        adjacency[i, j] = corr_matrix.iloc[i, j]
+                    else:
+                        adjacency[j, i] = corr_matrix.iloc[i, j]
         
-        edges = []
-        columns = list(self.data.columns)
-        
-        for i, source in enumerate(columns):
-            for j, target in enumerate(columns):
-                if abs(self.adjacency_matrix[i, j]) > 0.1:  # Threshold for edge
-                    edges.append(f'"{source}" -> "{target}"')
-        
-        return "; ".join(edges) if edges else ""
-    
-    def _create_networkx_graph(self) -> nx.DiGraph:
-        """Create NetworkX DiGraph from adjacency matrix for DoWhy"""
-        G = nx.DiGraph()
-        
-        if self.adjacency_matrix is None:
-            # Create simple graph with just the variables
-            columns = list(self.data.columns)
-            G.add_nodes_from(columns)
-            return G
-        
-        columns = list(self.data.columns)
-        G.add_nodes_from(columns)
-        
-        for i, source in enumerate(columns):
-            for j, target in enumerate(columns):
-                if abs(self.adjacency_matrix[i, j]) > 0.1:  # Threshold for edge
-                    G.add_edge(source, target, weight=self.adjacency_matrix[i, j])
-        
-        return G
+        return adjacency
 
     def calculate_ate(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
-        """Calculate Average Treatment Effect using optimized single method for speed"""
+        """Calculate Average Treatment Effect using available methods"""
         try:
-            # Suppress warnings during calculation
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                
-                # Create NetworkX graph for DoWhy
-                causal_graph = self._create_networkx_graph()
-                
-                # If no discovered graph, create a simple one with confounders
-                if len(causal_graph.edges()) == 0:
-                    if confounders:
-                        for conf in confounders:
-                            causal_graph.add_edge(conf, treatment)
-                            causal_graph.add_edge(conf, outcome)
-                    causal_graph.add_edge(treatment, outcome)
-                
-                self.causal_model = CausalModel(
-                    data=self.data,
-                    treatment=treatment,
-                    outcome=outcome,
-                    graph=causal_graph,
-                    common_causes=confounders or []
-                )
-                
-                # Identify causal effect
-                identified_estimand = self.causal_model.identify_effect(proceed_when_unidentifiable=True)
-                
-                # Use only linear regression for speed (most reliable and fastest)
-                results = {}
-                
-                try:
-                    causal_estimate = self.causal_model.estimate_effect(
-                        identified_estimand,
-                        method_name="backdoor.linear_regression"
-                    )
-                    
-                    # Get confidence intervals and p-value
-                    try:
-                        confidence_interval = causal_estimate.get_confidence_intervals()
-                        p_value = causal_estimate.get_significance_test_results()['p_value']
-                    except:
-                        confidence_interval = [None, None]
-                        p_value = None
-                    
-                    results["Linear Regression"] = {
-                        "estimate": causal_estimate.value,
-                        "confidence_interval": confidence_interval,
-                        "p_value": p_value,
-                        "method": "backdoor.linear_regression"
-                    }
-                    
-                    consensus_estimate = causal_estimate.value
-                    
-                except Exception as method_error:
-                    st.error(f"❌ Linear regression estimation failed: {str(method_error)}")
-                    return None
-                
-                # Skip robustness checks for speed - just do basic validation
-                robustness_results = {"status": "skipped_for_speed", "note": "Enable detailed analysis for full robustness checks"}
-                
-                # Calculate simplified additional metrics
-                additional_metrics = self._calculate_simple_metrics(treatment, outcome, consensus_estimate)
-                
-                return {
-                    "estimates": results,
-                    "consensus_estimate": consensus_estimate,
-                    "robustness": robustness_results,
-                    "interpretation": self._interpret_ate(consensus_estimate, treatment, outcome),
-                    "recommendation": self._generate_simple_recommendation(results),
-                    "additional_metrics": additional_metrics
-                }
+            if DOWHY_AVAILABLE:
+                return self._calculate_ate_dowhy(treatment, outcome, confounders)
+            else:
+                return self._calculate_ate_fallback(treatment, outcome, confounders)
                 
         except Exception as e:
             st.error(f"Error calculating ATE: {str(e)}")
-            # Provide fallback simple correlation analysis
-            try:
-                correlation = self.data[treatment].corr(self.data[outcome])
-                st.info(f"Fallback: Simple correlation between {treatment} and {outcome}: {correlation:.4f}")
-                return {
-                    "estimates": {"Simple Correlation": {"estimate": correlation, "confidence_interval": [None, None], "p_value": None}},
-                    "consensus_estimate": correlation,
-                    "robustness": {"warning": "Only correlation available - causal inference failed"},
-                    "interpretation": f"Simple correlation shows {abs(correlation):.4f} {'positive' if correlation > 0 else 'negative'} association",
-                    "recommendation": "⚠️ Use caution: This is correlation, not causation. Consider improving data or model specification.",
-                    "additional_metrics": {}
-                }
-            except:
-                return None
+            # Always provide correlation fallback
+            return self._calculate_ate_fallback(treatment, outcome, confounders)
     
-    def _calculate_simple_metrics(self, treatment: str, outcome: str, estimate: float) -> Dict:
-        """Calculate simplified metrics for speed"""
-        additional_metrics = {}
-        
-        try:
-            # Simple correlation-based metrics
-            correlation = self.data[treatment].corr(self.data[outcome])
-            r_squared = correlation ** 2
-            additional_metrics["r_squared"] = r_squared
-            additional_metrics["explained_variance_percent"] = r_squared * 100
+    def _calculate_ate_dowhy(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
+        """Calculate ATE using DoWhy (when available)"""
+        # Suppress warnings during calculation
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             
-            # Simple effect size classification
-            if abs(estimate) < 0.01:
-                effect_size = "Very Small"
-            elif abs(estimate) < 0.1:
-                effect_size = "Small"
-            elif abs(estimate) < 0.5:
-                effect_size = "Medium"
-            else:
-                effect_size = "Large"
-            additional_metrics["effect_size_interpretation"] = effect_size
+            # Create NetworkX graph for DoWhy
+            causal_graph = self._create_networkx_graph()
+            
+            # If no discovered graph, create a simple one with confounders
+            if len(causal_graph.edges()) == 0:
+                if confounders:
+                    for conf in confounders:
+                        causal_graph.add_edge(conf, treatment)
+                        causal_graph.add_edge(conf, outcome)
+                causal_graph.add_edge(treatment, outcome)
+            
+            self.causal_model = CausalModel(
+                data=self.data,
+                treatment=treatment,
+                outcome=outcome,
+                graph=causal_graph,
+                common_causes=confounders or []
+            )
+            
+            # Identify causal effect
+            identified_estimand = self.causal_model.identify_effect(proceed_when_unidentifiable=True)
+            
+            # Use only linear regression for speed (most reliable and fastest)
+            causal_estimate = self.causal_model.estimate_effect(
+                identified_estimand,
+                method_name="backdoor.linear_regression"
+            )
+            
+            # Get confidence intervals and p-value
+            try:
+                confidence_interval = causal_estimate.get_confidence_intervals()
+                p_value = causal_estimate.get_significance_test_results()['p_value']
+            except:
+                confidence_interval = [None, None]
+                p_value = None
+            
+            results = {
+                "Linear Regression": {
+                    "estimate": causal_estimate.value,
+                    "confidence_interval": confidence_interval,
+                    "p_value": p_value,
+                    "method": "backdoor.linear_regression"
+                }
+            }
+            
+            consensus_estimate = causal_estimate.value
+            
+            # Skip robustness checks for speed
+            robustness_results = {"status": "skipped_for_speed", "note": "Enable detailed analysis for full robustness checks"}
+            
+            # Calculate simplified additional metrics
+            additional_metrics = self._calculate_simple_metrics(treatment, outcome, consensus_estimate)
+            
+            return {
+                "estimates": results,
+                "consensus_estimate": consensus_estimate,
+                "robustness": robustness_results,
+                "interpretation": self._interpret_ate(consensus_estimate, treatment, outcome),
+                "recommendation": self._generate_simple_recommendation(results),
+                "additional_metrics": additional_metrics
+            }
+    
+    def _calculate_ate_fallback(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
+        """Fallback ATE calculation using regression without DoWhy"""
+        try:
+            from sklearn.linear_model import LinearRegression
+            from sklearn.metrics import r2_score
+            import scipy.stats as stats
+            
+            # Prepare data
+            X = self.data[[treatment] + (confounders or [])].values
+            y = self.data[outcome].values
+            
+            # Fit linear regression
+            model = LinearRegression()
+            model.fit(X, y)
+            
+            # Get treatment effect (coefficient of treatment variable)
+            treatment_effect = model.coef_[0]
+            
+            # Calculate predictions and residuals for p-value
+            y_pred = model.predict(X)
+            residuals = y - y_pred
+            mse = np.mean(residuals ** 2)
+            
+            # Calculate standard error and t-statistic
+            X_with_intercept = np.column_stack([np.ones(len(X)), X])
+            cov_matrix = mse * np.linalg.inv(X_with_intercept.T @ X_with_intercept)
+            se_treatment = np.sqrt(cov_matrix[1, 1])  # Standard error of treatment coefficient
+            
+            t_stat = treatment_effect / se_treatment
+            p_value = 2 * (1 - stats.t.cdf(abs(t_stat), len(X) - X.shape[1] - 1))
+            
+            # Calculate confidence interval
+            t_critical = stats.t.ppf(0.975, len(X) - X.shape[1] - 1)
+            ci_lower = treatment_effect - t_critical * se_treatment
+            ci_upper = treatment_effect + t_critical * se_treatment
+            
+            results = {
+                "Linear Regression (Fallback)": {
+                    "estimate": treatment_effect,
+                    "confidence_interval": [ci_lower, ci_upper],
+                    "p_value": p_value,
+                    "method": "sklearn_regression"
+                }
+            }
+            
+            # Calculate R-squared
+            r_squared = r2_score(y, y_pred)
+            
+            additional_metrics = {
+                "r_squared": r_squared,
+                "explained_variance_percent": r_squared * 100,
+                "effect_size_interpretation": self._classify_effect_size(treatment_effect)
+            }
+            
+            robustness_results = {"status": "fallback_method", "note": "Using sklearn regression fallback"}
+            
+            return {
+                "estimates": results,
+                "consensus_estimate": treatment_effect,
+                "robustness": robustness_results,
+                "interpretation": self._interpret_ate(treatment_effect, treatment, outcome),
+                "recommendation": self._generate_simple_recommendation(results),
+                "additional_metrics": additional_metrics
+            }
             
         except Exception as e:
-            additional_metrics["error"] = str(e)
-        
-        return additional_metrics
+            # Final fallback to simple correlation
+            correlation = self.data[treatment].corr(self.data[outcome])
+            return {
+                "estimates": {"Simple Correlation": {"estimate": correlation, "confidence_interval": [None, None], "p_value": None}},
+                "consensus_estimate": correlation,
+                "robustness": {"warning": "Only correlation available - regression failed"},
+                "interpretation": f"Simple correlation shows {abs(correlation):.4f} {'positive' if correlation > 0 else 'negative'} association",
+                "recommendation": "⚠️ Use caution: This is correlation, not causation. Consider improving data or model specification.",
+                "additional_metrics": {"r_squared": correlation**2, "effect_size_interpretation": self._classify_effect_size(correlation)}
+            }
     
-    def _generate_simple_recommendation(self, estimates: Dict) -> str:
-        """Generate simplified recommendation for speed"""
-        if not estimates:
-            return "❌ No reliable estimates available. Consider improving data quality."
-        
-        estimate_value = list(estimates.values())[0]["estimate"]
-        p_value = list(estimates.values())[0].get("p_value")
-        
-        if p_value and p_value < 0.05:
-            if abs(estimate_value) > 0.1:
-                return "✅ Strong significant causal effect detected. Consider implementing interventions."
-            else:
-                return "📊 Statistically significant but small effect. Consider cost-benefit analysis."
+    def _classify_effect_size(self, effect: float) -> str:
+        """Classify effect size"""
+        abs_effect = abs(effect)
+        if abs_effect < 0.01:
+            return "Very Small"
+        elif abs_effect < 0.1:
+            return "Small"
+        elif abs_effect < 0.5:
+            return "Medium"
         else:
-            return "⚠️ No statistically significant causal effect detected. Explore other variables or collect more data."
+            return "Large"
     
-    def analyze_variable_relationships(self) -> Dict:
-        """Analyze relationships between variables for better insights"""
-        if self.data is None:
-            return {}
+    def generate_domain_constraints(self, columns: List[str], domain_context: str, api_key: str = None) -> Dict:
+        """Use LLM to generate domain-specific constraints"""
+        if not OPENAI_AVAILABLE:
+            st.warning("OpenAI not available. Skipping domain constraints generation.")
+            return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "OpenAI not available"}
         
-        relationships = {}
-        columns = list(self.data.columns)
-        
+        try:
+            if not api_key and not st.secrets.get("OPENAI_API_KEY"):
         # Calculate correlation matrix
         corr_matrix = self.data.corr()
         
