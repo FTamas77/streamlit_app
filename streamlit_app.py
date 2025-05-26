@@ -690,173 +690,50 @@ class CausalAnalyzer:
         
         try:
             if not api_key and not st.secrets.get("OPENAI_API_KEY"):
-        # Calculate correlation matrix
-        corr_matrix = self.data.corr()
-        
-        # Find strongest correlations
-        strong_correlations = []
-        for i, col1 in enumerate(columns):
-            for j, col2 in enumerate(columns):
-                if i < j and abs(corr_matrix.loc[col1, col2]) > 0.5:
-                    strong_correlations.append({
-                        'var1': col1,
-                        'var2': col2,
-                        'correlation': corr_matrix.loc[col1, col2]
-                    })
-        
-        # Sort by correlation strength
-        strong_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
-        
-        relationships['strong_correlations'] = strong_correlations[:10]  # Top 10
-        relationships['correlation_matrix'] = corr_matrix
-        
-        return relationships
-    
-    def _interpret_ate(self, ate_value: float, treatment: str, outcome: str) -> str:
-        """Generate interpretation of ATE"""
-        if ate_value is None:
-            return "Unable to determine causal effect"
-        
-        if ate_value > 0:
-            direction = "increases"
-        elif ate_value < 0:
-            direction = "decreases"
-        else:
-            direction = "has no effect on"
+                st.error("Please provide an OpenAI API key to use AI features")
+                return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No API key provided"}
             
-        return f"A one-unit increase in {treatment} {direction} {outcome} by {abs(ate_value):.4f} units on average."
-    
-    def analyze_effect_heterogeneity(self, treatment: str, outcome: str, moderator: str = None) -> Dict:
-        """Analyze heterogeneous treatment effects"""
-        if not moderator:
-            return {"error": "No moderator variable selected"}
-        
-        try:
-            # Split data by moderator (median split for continuous variables)
-            moderator_data = self.data[moderator]
-            moderator_median = moderator_data.median()
+            client = init_openai(api_key)
             
-            # High moderator group
-            high_mod_data = self.data[moderator_data > moderator_median]
-            high_mod_corr = high_mod_data[treatment].corr(high_mod_data[outcome])
+            prompt = f"""
+            Given a dataset with columns: {', '.join(columns)}
+            Domain context: {domain_context}
             
-            # Low moderator group
-            low_mod_data = self.data[moderator_data <= moderator_median]
-            low_mod_corr = low_mod_data[treatment].corr(low_mod_data[outcome])
+            Generate domain constraints for causal discovery in JSON format:
+            {{
+                "forbidden_edges": [["source", "target"], ...],
+                "required_edges": [["source", "target"], ...],
+                "temporal_order": ["earliest_var", "middle_var", "latest_var", ...],
+                "explanation": "Brief explanation of constraints"
+            }}
             
-            # Difference in effects
-            effect_difference = high_mod_corr - low_mod_corr
+            Consider:
+            1. Temporal relationships (causes must precede effects)
+            2. Domain knowledge (what relationships make sense)
+            3. Physical/logical impossibilities
             
-            return {
-                "high_moderator_effect": high_mod_corr,
-                "low_moderator_effect": low_mod_corr,
-                "effect_difference": effect_difference,
-                "interpretation": f"The effect varies by {moderator}: {abs(effect_difference):.3f} difference between high/low groups"
-            }
+            Respond only with valid JSON.
+            """
+            
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            
+            constraints = json.loads(response.choices[0].message.content)
+            self.domain_constraints = constraints
+            return constraints
             
         except Exception as e:
-            return {"error": str(e)}
-    
-    def simulate_policy_intervention(self, treatment: str, outcome: str, intervention_size: float) -> Dict:
-        """Simulate the effect of a policy intervention"""
-        try:
-            # Calculate current baseline
-            current_outcome_mean = self.data[outcome].mean()
-            current_treatment_mean = self.data[treatment].mean()
-            
-            # Estimate effect from correlation (simplified)
-            correlation = self.data[treatment].corr(self.data[outcome])
-            outcome_std = self.data[outcome].std()
-            treatment_std = self.data[treatment].std()
-            
-            # Predicted change in outcome
-            predicted_change = correlation * (outcome_std / treatment_std) * intervention_size
-            predicted_new_outcome = current_outcome_mean + predicted_change
-            
-            # Calculate percentage change
-            percent_change = (predicted_change / current_outcome_mean) * 100
-            
-            return {
-                "current_baseline": current_outcome_mean,
-                "intervention_size": intervention_size,
-                "predicted_outcome_change": predicted_change,
-                "predicted_new_outcome": predicted_new_outcome,
-                "percent_change": percent_change,
-                "interpretation": f"Increasing {treatment} by {intervention_size} units may change {outcome} by {predicted_change:.3f} units ({percent_change:.1f}%)"
-            }
-            
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def _perform_detailed_robustness_checks(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
-        """Perform detailed robustness checks only when requested"""
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                
-                # Re-run the full causal model for detailed analysis
-                causal_graph = self._create_networkx_graph()
-                
-                if len(causal_graph.edges()) == 0:
-                    if confounders:
-                        for conf in confounders:
-                            causal_graph.add_edge(conf, treatment)
-                            causal_graph.add_edge(conf, outcome)
-                    causal_graph.add_edge(treatment, outcome)
-                
-                causal_model = CausalModel(
-                    data=self.data,
-                    treatment=treatment,
-                    outcome=outcome,
-                    graph=causal_graph,
-                    common_causes=confounders or []
-                )
-                
-                identified_estimand = causal_model.identify_effect(proceed_when_unidentifiable=True)
-                primary_estimate = causal_model.estimate_effect(identified_estimand, method_name="backdoor.linear_regression")
-                
-                robustness_results = {}
-                
-                # Random common cause refutation
-                try:
-                    refutation_random = causal_model.refute_estimate(
-                        identified_estimand,
-                        primary_estimate,
-                        method_name="random_common_cause",
-                        num_simulations=10  # Reduced for speed
-                    )
-                    robustness_results["random_common_cause"] = {
-                        "new_effect": getattr(refutation_random, 'new_effect', 'N/A'),
-                        "p_value": getattr(refutation_random, 'p_value', None),
-                        "status": "passed" if hasattr(refutation_random, 'new_effect') else "failed"
-                    }
-                except Exception as e:
-                    robustness_results["random_common_cause"] = {"error": str(e), "status": "failed"}
-                
-                # Data subset refutation
-                try:
-                    refutation_subset = causal_model.refute_estimate(
-                        identified_estimand,
-                        primary_estimate,
-                        method_name="data_subset_refuter",
-                        subset_fraction=0.8,
-                        num_simulations=10  # Reduced for speed
-                    )
-                    robustness_results["data_subset"] = {
-                        "new_effect": getattr(refutation_subset, 'new_effect', 'N/A'),
-                        "p_value": getattr(refutation_subset, 'p_value', None),
-                        "status": "passed" if hasattr(refutation_subset, 'new_effect') else "failed"
-                    }
-                except Exception as e:
-                    robustness_results["data_subset"] = {"error": str(e), "status": "failed"}
-                
-                return robustness_results
-                
-        except Exception as e:
-            return {"error": str(e)}
+            st.error(f"Error generating constraints: {str(e)}")
+            return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No constraints generated"}
     
     def explain_results_with_llm(self, ate_results: Dict, treatment: str, outcome: str, api_key: str = None) -> str:
         """Use LLM to explain causal analysis results"""
+        if not OPENAI_AVAILABLE:
+            return "OpenAI package not available. Cannot generate AI explanations."
+        
         try:
             if not api_key and not st.secrets.get("OPENAI_API_KEY"):
                 return "OpenAI API key required for AI explanations. Please provide your API key in the sidebar."
@@ -949,6 +826,12 @@ with st.sidebar:
 # Main interface
 st.title("🤖 Causal AI Platform")
 st.markdown("Discover causal relationships in your data using advanced AI and statistical methods.")
+
+# Show package availability status
+with st.expander("📦 Package Availability Status"):
+    st.write(f"**LiNGAM (Causal Discovery):** {'✅ Available' if LINGAM_AVAILABLE else '❌ Not Available (using correlation fallback)'}")
+    st.write(f"**DoWhy (Causal Inference):** {'✅ Available' if DOWHY_AVAILABLE else '❌ Not Available (using sklearn fallback)'}")
+    st.write(f"**OpenAI (AI Features):** {'✅ Available' if OPENAI_AVAILABLE else '❌ Not Available (AI features disabled)'}")
 
 # Step 1: Data Upload
 st.header("📁 Step 1: Data Upload")
