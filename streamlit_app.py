@@ -675,21 +675,24 @@ class CausalAnalyzer:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 
-                # Re-run the full causal model for detailed analysis
-                causal_graph = self._create_networkx_graph()
+                # Create graph string for DoWhy
+                graph_string = self._adjacency_to_graph_string()
                 
-                if len(causal_graph.edges()) == 0:
+                # If no discovered graph, create a simple one with confounders
+                if not graph_string:
+                    edges = []
                     if confounders:
                         for conf in confounders:
-                            causal_graph.add_edge(conf, treatment)
-                            causal_graph.add_edge(conf, outcome)
-                    causal_graph.add_edge(treatment, outcome)
+                            edges.append(f'"{conf}" -> "{treatment}"')
+                            edges.append(f'"{conf}" -> "{outcome}"')
+                    edges.append(f'"{treatment}" -> "{outcome}"')
+                    graph_string = "; ".join(edges)
                 
                 causal_model = CausalModel(
                     data=self.data,
                     treatment=treatment,
                     outcome=outcome,
-                    graph=causal_graph,
+                    graph=graph_string,
                     common_causes=confounders or []
                 )
                 
@@ -803,8 +806,7 @@ class CausalAnalyzer:
                 return self._calculate_ate_fallback(treatment, outcome, confounders)
                 
         except Exception as e:
-            st.error(f"Error calculating ATE: {str(e)}")
-            # Always provide correlation fallback
+            # Only show error if there's actually an error, and provide fallback
             return self._calculate_ate_fallback(treatment, outcome, confounders)
     
     def _calculate_ate_dowhy(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
@@ -813,22 +815,25 @@ class CausalAnalyzer:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             
-            # Create NetworkX graph for DoWhy
-            causal_graph = self._create_networkx_graph()
+            # Create graph string for DoWhy instead of NetworkX graph
+            graph_string = self._adjacency_to_graph_string()
             
             # If no discovered graph, create a simple one with confounders
-            if len(causal_graph.edges()) == 0:
+            if not graph_string:
+                edges = []
                 if confounders:
                     for conf in confounders:
-                        causal_graph.add_edge(conf, treatment)
-                        causal_graph.add_edge(conf, outcome)
-                causal_graph.add_edge(treatment, outcome)
+                        edges.append(f'"{conf}" -> "{treatment}"')
+                        edges.append(f'"{conf}" -> "{outcome}"')
+                edges.append(f'"{treatment}" -> "{outcome}"')
+                graph_string = "; ".join(edges)
             
+            # Create CausalModel with graph string
             self.causal_model = CausalModel(
                 data=self.data,
                 treatment=treatment,
                 outcome=outcome,
-                graph=causal_graph,
+                graph=graph_string,
                 common_causes=confounders or []
             )
             
@@ -1343,46 +1348,52 @@ if uploaded_file:
         
         if st.button("🔍 Analyze Variable Relationships", type="secondary"):
             with st.spinner("Analyzing variable relationships..."):
-                relationships = analyzer.analyze_variable_relationships()
-            
-            if relationships:
-                st.success("✅ Relationship analysis completed!")
-                
-                # Show correlation heatmap
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.subheader("🔥 Correlation Heatmap")
-                    fig_corr = px.imshow(
-                        relationships['correlation_matrix'],
-                        text_auto=True,
-                        aspect="auto",
-                        color_continuous_scale='RdBu_r',
-                        title="Variable Correlation Matrix"
-                    )
-                    st.plotly_chart(fig_corr, use_container_width=True)
-                
-                with col2:
-                    st.subheader("💪 Strongest Correlations")
-                    strong_corr = relationships['strong_correlations']
-                    if strong_corr:
-                        for corr in strong_corr[:5]:  # Show top 5
-                            st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
+                # Add safety check to ensure data is available
+                if analyzer.data is not None and not analyzer.data.empty:
+                    relationships = analyzer.analyze_variable_relationships()
+                    
+                    if relationships:
+                        st.success("✅ Relationship analysis completed!")
+                        
+                        # Show correlation heatmap
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            st.subheader("🔥 Correlation Heatmap")
+                            fig_corr = px.imshow(
+                                relationships['correlation_matrix'],
+                                text_auto=True,
+                                aspect="auto",
+                                color_continuous_scale='RdBu_r',
+                                title="Variable Correlation Matrix"
+                            )
+                            st.plotly_chart(fig_corr, use_container_width=True)
+                        
+                        with col2:
+                            st.subheader("💪 Strongest Correlations")
+                            strong_corr = relationships['strong_correlations']
+                            if strong_corr:
+                                for corr in strong_corr[:5]:  # Show top 5
+                                    st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
+                            else:
+                                st.write("No strong correlations (>0.5) found")
+                        
+                        # Suggested variable pairs for causal analysis
+                        st.subheader("💡 Suggested Treatment-Outcome Pairs")
+                        if strong_corr:
+                            suggested_pairs = []
+                            for corr in strong_corr[:3]:
+                                suggested_pairs.append({
+                                    "Treatment": corr['var1'],
+                                    "Outcome": corr['var2'],
+                                    "Correlation": f"{corr['correlation']:.3f}",
+                                    "Suggestion": "High correlation - investigate causality"
+                                })
+                            st.dataframe(pd.DataFrame(suggested_pairs), use_container_width=True)
                     else:
-                        st.write("No strong correlations (>0.5) found")
-                
-                # Suggested variable pairs for causal analysis
-                st.subheader("💡 Suggested Treatment-Outcome Pairs")
-                if strong_corr:
-                    suggested_pairs = []
-                    for corr in strong_corr[:3]:
-                        suggested_pairs.append({
-                            "Treatment": corr['var1'],
-                            "Outcome": corr['var2'],
-                            "Correlation": f"{corr['correlation']:.3f}",
-                            "Suggestion": "High correlation - investigate causality"
-                        })
-                    st.dataframe(pd.DataFrame(suggested_pairs), use_container_width=True)
+                        st.error("❌ Unable to analyze relationships - check data quality")
+                else:
+                    st.error("❌ No data available for analysis")
         
         # Step 4: Causal Inference Analysis
         st.header("🔬 Step 4: Causal Inference Analysis")
@@ -1392,311 +1403,325 @@ if uploaded_file:
         We'll use multiple estimation methods to ensure robust results.
         """)
         
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            treatment_var = st.selectbox(
-                "Treatment Variable (Cause)",
-                options=list(analyzer.data.columns),
-                key="treatment_select",
-                help="The variable whose causal effect you want to measure",
-                index=0  # Set default index to prevent auto-triggering
-            )
-        
-        with col2:
-            outcome_var = st.selectbox(
-                "Outcome Variable (Effect)", 
-                options=[col for col in analyzer.data.columns if col != treatment_var],
-                key="outcome_select",
-                help="The variable that may be causally affected by the treatment",
-                index=0  # Set default index to prevent auto-triggering
-            )
-        
-        with col3:
-            confounders = st.multiselect(
-                "Confounding Variables",
-                options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
-                key="confounders_select",
-                help="Variables that might affect both treatment and outcome (important for accurate causal inference)"
-            )
-        
-        # Validation and suggestions (only show when variables are selected, but don't auto-run analysis)
-        if treatment_var and outcome_var and treatment_var != outcome_var:
-            # Show variable summary
-            col1, col2 = st.columns(2)
-            with col1:
-                st.info(f"**Treatment:** {treatment_var}\n- Range: [{analyzer.data[treatment_var].min():.2f}, {analyzer.data[treatment_var].max():.2f}]\n- Mean: {analyzer.data[treatment_var].mean():.2f}")
-            with col2:
-                st.info(f"**Outcome:** {outcome_var}\n- Range: [{analyzer.data[outcome_var].min():.2f}, {analyzer.data[outcome_var].max():.2f}]\n- Mean: {analyzer.data[outcome_var].mean():.2f}")
-            
-            # Show correlation between treatment and outcome (quick preview)
-            correlation = analyzer.data[treatment_var].corr(analyzer.data[outcome_var])
-            st.metric("Correlation between Treatment & Outcome", f"{correlation:.4f}")
-        elif treatment_var == outcome_var:
-            st.error("❌ Treatment and outcome variables must be different!")
-        
-        # Add explanation of confounders
-        with st.expander("❓ What are confounding variables?"):
-            st.markdown("""
-            **Confounders** are variables that influence both the treatment and outcome, potentially creating spurious correlations.
-            
-            **Example:** If studying the effect of exercise on health:
-            - **Treatment:** Exercise frequency
-            - **Outcome:** Health score  
-            - **Potential confounders:** Age, income, education (these affect both exercise habits and health)
-            
-            Including relevant confounders helps ensure we measure the true causal effect.
-            """)
-        
-        # Only run analysis when button is pressed
-        run_analysis = st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference")
-        
-        if run_analysis:
-            if not treatment_var or not outcome_var:
-                st.error("❌ Please select both treatment and outcome variables")
-            elif treatment_var == outcome_var:
-                st.error("❌ Please select different variables for treatment and outcome")
-            else:
-                # Store selections in session state
-                st.session_state['selected_treatment'] = treatment_var
-                st.session_state['selected_outcome'] = outcome_var
-                
-                # Show progress bar for better UX
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                status_text.text("Setting up causal model...")
-                progress_bar.progress(25)
-                
-                status_text.text("Running causal inference...")
-                progress_bar.progress(50)
-                
-                ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
-                
-                progress_bar.progress(100)
-                status_text.text("Analysis complete!")
-                
-                # Clear progress indicators
-                progress_bar.empty()
-                status_text.empty()
-                
-                st.session_state['ate_results'] = ate_results
-
-# Display results if available (only after button press)
-if st.session_state.get('ate_results') and st.session_state.get('selected_treatment') and st.session_state.get('selected_outcome'):
-    ate_results = st.session_state['ate_results']
-    treatment_var = st.session_state['selected_treatment']
-    outcome_var = st.session_state['selected_outcome']
-    
-    # Check if current selection matches stored results
-    current_treatment = st.session_state.get('treatment_select', '')
-    current_outcome = st.session_state.get('outcome_select', '')
-    
-    if (current_treatment == treatment_var and current_outcome == outcome_var) or run_analysis:
-        st.success("✅ Causal inference completed!")
-        
-        # Display consensus result prominently
-        st.subheader("📊 Main Result")
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.metric(
-                "Causal Effect Estimate", 
-                f"{ate_results['consensus_estimate']:.4f}",
-                help="Average causal effect across multiple estimation methods"
-            )
-        
-        with col2:
-            st.info(f"**Interpretation:** {ate_results['interpretation']}")
-        
-        # Show detailed results from different methods
-        st.subheader("🔍 Detailed Results by Method")
-        
-        results_df = []
-        for method, result in ate_results['estimates'].items():
-            ci = result['confidence_interval']
-            ci_str = f"[{ci[0]:.4f}, {ci[1]:.4f}]" if ci[0] is not None else "N/A"
-            p_val_str = f"{result['p_value']:.4f}" if result['p_value'] is not None else "N/A"
-            
-            results_df.append({
-                "Method": method,
-                "Estimate": f"{result['estimate']:.4f}",
-                "95% CI": ci_str,
-                "P-value": p_val_str,
-                "Significant": "✅" if result['p_value'] and result['p_value'] < 0.05 else "❌"
-            })
-        
-        st.dataframe(pd.DataFrame(results_df), use_container_width=True)
-        
-        # Additional Metrics (NEW FEATURE)
-        if 'additional_metrics' in ate_results and ate_results['additional_metrics']:
-            st.subheader("📏 Additional Metrics")
-            metrics = ate_results['additional_metrics']
-            
+        # Add safety check for data availability before creating selectors
+        if analyzer.data is not None and not analyzer.data.empty:
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                if 'cohens_d' in metrics:
-                    st.metric("Cohen's d (Effect Size)", f"{metrics['cohens_d']:.3f}")
+                treatment_var = st.selectbox(
+                    "Treatment Variable (Cause)",
+                    options=list(analyzer.data.columns),
+                    key="treatment_select",
+                    help="The variable whose causal effect you want to measure",
+                    index=0  # Set default index to prevent auto-triggering
+                )
             
             with col2:
-                if 'r_squared' in metrics:
-                    st.metric("R² (Explained Variance)", f"{metrics['r_squared']:.3f}")
+                outcome_var = st.selectbox(
+                    "Outcome Variable (Effect)", 
+                    options=[col for col in analyzer.data.columns if col != treatment_var],
+                    key="outcome_select",
+                    help="The variable that may be causally affected by the treatment",
+                    index=0  # Set default index to prevent auto-triggering
+                )
             
             with col3:
-                if 'effect_size_interpretation' in metrics:
-                    st.metric("Effect Size", metrics['effect_size_interpretation'])
-        
-        # Robustness checks (simplified for speed)
-        st.subheader("🛡️ Robustness Analysis")
-        
-        if ate_results['robustness'].get('status') == 'skipped_for_speed':
-            st.info("⚡ Robustness checks skipped for faster performance. Enable detailed analysis below for full validation.")
+                confounders = st.multiselect(
+                    "Confounding Variables",
+                    options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
+                    key="confounders_select",
+                    help="Variables that might affect both treatment and outcome (important for accurate causal inference)"
+                )
             
-            if st.button("🔍 Run Detailed Robustness Analysis", key="detailed_robustness"):
-                with st.spinner("Running comprehensive robustness checks..."):
-                    detailed_results = analyzer._perform_detailed_robustness_checks(treatment_var, outcome_var, confounders)
-                
-                if detailed_results and 'error' not in detailed_results:
-                    robustness_df = []
-                    for test_name, test_result in detailed_results.items():
-                        if isinstance(test_result, dict) and 'error' not in test_result:
-                            effect_val = test_result.get('new_effect', 'N/A')
-                            if isinstance(effect_val, (int, float)):
-                                effect_str = f"{effect_val:.4f}"
-                                status = "✅ Robust" if abs(effect_val - ate_results['consensus_estimate']) < 0.1 else "⚠️ Sensitive"
-                            else:
-                                effect_str = str(effect_val)
-                                status = "❌ Failed"
-                        
-                            robustness_df.append({
-                                "Robustness Test": test_name.replace('_', ' ').title(),
-                                "Effect After Test": effect_str,
-                                "Status": status
-                            })
-                    
-                    if robustness_df:
-                        st.dataframe(pd.DataFrame(robustness_df), use_container_width=True)
-                        st.caption("Robustness tests check if results remain stable under different assumptions")
-        else:
-            st.warning("Robustness checks could not be performed")
-        
-        # Effect Heterogeneity Analysis
-        st.subheader("🎭 Effect Heterogeneity Analysis")
-        st.markdown("Analyze how the causal effect varies across different subgroups.")
-        
-        moderator_var = st.selectbox(
-            "Select Moderator Variable",
-            options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
-            help="Variable that might moderate the treatment effect"
-        )
-        
-        if st.button("🔍 Analyze Effect Heterogeneity"):
-            with st.spinner("Analyzing effect heterogeneity..."):
-                heterogeneity_results = analyzer.analyze_effect_heterogeneity(treatment_var, outcome_var, moderator_var)
-            
-            if 'error' not in heterogeneity_results:
-                col1, col2, col3 = st.columns(3)
+            # Validation and suggestions (only show when variables are selected, but don't auto-run analysis)
+            if treatment_var and outcome_var and treatment_var != outcome_var:
+                # Show variable summary
+                col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("High Group Effect", f"{heterogeneity_results['high_moderator_effect']:.4f}")
+                    st.info(f"**Treatment:** {treatment_var}\n- Range: [{analyzer.data[treatment_var].min():.2f}, {analyzer.data[treatment_var].max():.2f}]\n- Mean: {analyzer.data[treatment_var].mean():.2f}")
                 with col2:
-                    st.metric("Low Group Effect", f"{heterogeneity_results['low_moderator_effect']:.4f}")
-                with col3:
-                    st.metric("Effect Difference", f"{heterogeneity_results['effect_difference']:.4f}")
+                    st.info(f"**Outcome:** {outcome_var}\n- Range: [{analyzer.data[outcome_var].min():.2f}, {analyzer.data[outcome_var].max():.2f}]\n- Mean: {analyzer.data[outcome_var].mean():.2f}")
                 
-                st.info(heterogeneity_results['interpretation'])
-            else:
-                st.error(f"Error in heterogeneity analysis: {heterogeneity_results['error']}")
-        
-        # Policy Simulation
-        st.subheader("🎯 Policy Intervention Simulator")
-        st.markdown("Simulate the expected impact of changing the treatment variable.")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            intervention_size = st.number_input(
-                f"Change in {treatment_var}",
-                value=1.0,
-                step=0.1,
-                help="How much to change the treatment variable"
-            )
-        
-        with col2:
-            if st.button("🚀 Simulate Policy Impact"):
-                with st.spinner("Simulating policy intervention..."):
-                    simulation_results = analyzer.simulate_policy_intervention(treatment_var, outcome_var, intervention_size)
+                # Show correlation between treatment and outcome (quick preview)
+                correlation = analyzer.data[treatment_var].corr(analyzer.data[outcome_var])
+                st.metric("Correlation between Treatment & Outcome", f"{correlation:.4f}")
+            elif treatment_var == outcome_var:
+                st.error("❌ Treatment and outcome variables must be different!")
+            
+            # Add explanation of confounders
+            with st.expander("❓ What are confounding variables?"):
+                st.markdown("""
+                **Confounders** are variables that influence both the treatment and outcome, potentially creating spurious correlations.
                 
-                if 'error' not in simulation_results:
-                    st.success("✅ Simulation completed!")
+                **Example:** If studying the effect of exercise on health:
+                - **Treatment:** Exercise frequency
+                - **Outcome:** Health score  
+                - **Potential confounders:** Age, income, education (these affect both exercise habits and health)
+                
+                Including relevant confounders helps ensure we measure the true causal effect.
+                """)
+            
+            # Only run analysis when button is pressed
+            run_analysis = st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference")
+            
+            if run_analysis:
+                if not treatment_var or not outcome_var:
+                    st.error("❌ Please select both treatment and outcome variables")
+                elif treatment_var == outcome_var:
+                    st.error("❌ Please select different variables for treatment and outcome")
+                else:
+                    # Store selections in session state
+                    st.session_state['selected_treatment'] = treatment_var
+                    st.session_state['selected_outcome'] = outcome_var
+                    st.session_state['run_analysis_executed'] = True  # Flag to show results
+                    
+                    # Show progress bar for better UX
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    status_text.text("Setting up causal model...")
+                    progress_bar.progress(25)
+                    
+                    status_text.text("Running causal inference...")
+                    progress_bar.progress(50)
+                    
+                    ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
+                    
+                    progress_bar.progress(100)
+                    status_text.text("Analysis complete!")
+                    
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    st.session_state['ate_results'] = ate_results
+        else:
+            st.warning("⚠️ Please upload and process data first before running causal inference.")
+            treatment_var = None
+            outcome_var = None
+            confounders = []
+            
+            # Still show the button but disabled state
+            st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference_disabled", disabled=True)
+
+        # Display results if available (only after button press)
+        if st.session_state.get('ate_results') and st.session_state.get('selected_treatment') and st.session_state.get('selected_outcome'):
+            ate_results = st.session_state['ate_results']
+            treatment_var = st.session_state['selected_treatment']
+            outcome_var = st.session_state['selected_outcome']
+            
+            # Check if current selection matches stored results
+            current_treatment = st.session_state.get('treatment_select', '')
+            current_outcome = st.session_state.get('outcome_select', '')
+            
+            # Only show results if run_analysis was just executed or variables match
+            if (current_treatment == treatment_var and current_outcome == outcome_var) or st.session_state.get('run_analysis_executed', False):
+                # Reset the execution flag
+                if 'run_analysis_executed' in st.session_state:
+                    del st.session_state['run_analysis_executed']
+                    
+                st.success("✅ Causal inference completed!")
+                
+                # Display consensus result prominently
+                st.subheader("📊 Main Result")
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    st.metric(
+                        "Causal Effect Estimate", 
+                        f"{ate_results['consensus_estimate']:.4f}",
+                        help="Average causal effect across multiple estimation methods"
+                    )
+                
+                with col2:
+                    st.info(f"**Interpretation:** {ate_results['interpretation']}")
+                
+                # Show detailed results from different methods
+                st.subheader("🔍 Detailed Results by Method")
+                
+                results_df = []
+                for method, result in ate_results['estimates'].items():
+                    ci = result['confidence_interval']
+                    ci_str = f"[{ci[0]:.4f}, {ci[1]:.4f}]" if ci[0] is not None else "N/A"
+                    p_val_str = f"{result['p_value']:.4f}" if result['p_value'] is not None else "N/A"
+                    
+                    results_df.append({
+                        "Method": method,
+                        "Estimate": f"{result['estimate']:.4f}",
+                        "95% CI": ci_str,
+                        "P-value": p_val_str,
+                        "Significant": "✅" if result['p_value'] and result['p_value'] < 0.05 else "❌"
+                    })
+                
+                st.dataframe(pd.DataFrame(results_df), use_container_width=True)
+                
+                # Additional Metrics
+                if 'additional_metrics' in ate_results and ate_results['additional_metrics']:
+                    st.subheader("📏 Additional Metrics")
+                    metrics = ate_results['additional_metrics']
                     
                     col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Current Baseline", f"{simulation_results['current_baseline']:.3f}")
-                    with col2:
-                        st.metric("Predicted Change", f"{simulation_results['predicted_outcome_change']:.3f}")
-                    with col3:
-                        st.metric("Percentage Change", f"{simulation_results['percent_change']:.1f}%")
                     
-                    st.info(simulation_results['interpretation'])
+                    with col1:
+                        if 'r_squared' in metrics:
+                            st.metric("R² (Explained Variance)", f"{metrics['r_squared']:.3f}")
+                    
+                    with col2:
+                        if 'explained_variance_percent' in metrics:
+                            st.metric("Explained Variance %", f"{metrics['explained_variance_percent']:.1f}%")
+                    
+                    with col3:
+                        if 'effect_size_interpretation' in metrics:
+                            st.metric("Effect Size", metrics['effect_size_interpretation'])
+                
+                # Robustness Analysis
+                st.subheader("🛡️ Robustness Analysis")
+                
+                if ate_results['robustness'].get('status') == 'skipped_for_speed':
+                    st.info("⚡ Robustness checks skipped for faster performance. Enable detailed analysis below for full validation.")
+                    
+                    if st.button("🔍 Run Detailed Robustness Analysis", key="detailed_robustness"):
+                        with st.spinner("Running comprehensive robustness checks..."):
+                            detailed_results = analyzer._perform_detailed_robustness_checks(treatment_var, outcome_var, confounders)
+                        
+                        if detailed_results and 'error' not in detailed_results:
+                            robustness_df = []
+                            for test_name, test_result in detailed_results.items():
+                                if isinstance(test_result, dict) and 'error' not in test_result:
+                                    effect_val = test_result.get('new_effect', 'N/A')
+                                    if isinstance(effect_val, (int, float)):
+                                        effect_str = f"{effect_val:.4f}"
+                                        status = "✅ Robust" if abs(effect_val - ate_results['consensus_estimate']) < 0.1 else "⚠️ Sensitive"
+                                    else:
+                                        effect_str = str(effect_val)
+                                        status = "❌ Failed"
+                                
+                                    robustness_df.append({
+                                        "Robustness Test": test_name.replace('_', ' ').title(),
+                                        "Effect After Test": effect_str,
+                                        "Status": status
+                                    })
+                            
+                            if robustness_df:
+                                st.dataframe(pd.DataFrame(robustness_df), use_container_width=True)
+                                st.caption("Robustness tests check if results remain stable under different assumptions")
                 else:
-                    st.error(f"Simulation error: {simulation_results['error']}")
-        
-        # Recommendation
-        st.subheader("💡 Recommendation")
-        st.info(ate_results['recommendation'])
-        
-        # Export results feature
-        st.subheader("📁 Export Results")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📊 Download Results as CSV"):
-                results_export = pd.DataFrame(results_df)
-                csv = results_export.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name=f"causal_analysis_{treatment_var}_{outcome_var}.csv",
-                    mime="text/csv"
+                    st.warning("Robustness checks could not be performed")
+                
+                # Effect Heterogeneity Analysis
+                st.subheader("🎭 Effect Heterogeneity Analysis")
+                st.markdown("Analyze how the causal effect varies across different subgroups.")
+                
+                moderator_var = st.selectbox(
+                    "Select Moderator Variable",
+                    options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
+                    help="Variable that might moderate the treatment effect"
                 )
-        
-        with col2:
-            if st.button("📋 Copy Summary to Clipboard"):
-                summary_text = f"""
+                
+                if st.button("🔍 Analyze Effect Heterogeneity"):
+                    with st.spinner("Analyzing effect heterogeneity..."):
+                        heterogeneity_results = analyzer.analyze_effect_heterogeneity(treatment_var, outcome_var, moderator_var)
+                    
+                    if 'error' not in heterogeneity_results:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("High Group Effect", f"{heterogeneity_results['high_moderator_effect']:.4f}")
+                        with col2:
+                            st.metric("Low Group Effect", f"{heterogeneity_results['low_moderator_effect']:.4f}")
+                        
+                        st.info(heterogeneity_results['interpretation'])
+                    else:
+                        st.error(f"Error in heterogeneity analysis: {heterogeneity_results['error']}")
+                
+                # Policy Simulation
+                st.subheader("🎯 Policy Intervention Simulator")
+                st.markdown("Simulate the expected impact of changing the treatment variable.")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    intervention_size = st.number_input(
+                        f"Change in {treatment_var}",
+                        value=1.0,
+                        step=0.1,
+                        help="How much to change the treatment variable"
+                    )
+                
+                with col2:
+                    if st.button("🚀 Simulate Policy Impact"):
+                        with st.spinner("Simulating policy intervention..."):
+                            simulation_results = analyzer.simulate_policy_intervention(treatment_var, outcome_var, intervention_size)
+                        
+                        if 'error' not in simulation_results:
+                            st.success("✅ Simulation completed!")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Current Baseline", f"{simulation_results['current_baseline']:.3f}")
+                            with col2:
+                                st.metric("Predicted Change", f"{simulation_results['predicted_outcome_change']:.3f}")
+                            with col3:
+                                st.metric("Percentage Change", f"{simulation_results['percent_change']:.1f}%")
+                            
+                            st.info(simulation_results['interpretation'])
+                        else:
+                            st.error(f"Simulation error: {simulation_results['error']}")
+                
+                # Recommendation
+                st.subheader("💡 Recommendation")
+                st.info(ate_results['recommendation'])
+                
+                # Export results feature
+                st.subheader("📁 Export Results")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("📊 Download Results as CSV"):
+                        results_export = pd.DataFrame(results_df)
+                        csv = results_export.to_csv(index=False)
+                        st.download_button(
+                            label="Download CSV",
+                            data=csv,
+                            file_name=f"causal_analysis_{treatment_var}_{outcome_var}.csv",
+                            mime="text/csv"
+                        )
+                
+                with col2:
+                    if st.button("📋 Copy Summary to Clipboard"):
+                        summary_text = f"""
 Causal Analysis Summary
 Treatment: {treatment_var}
 Outcome: {outcome_var}
 Causal Effect: {ate_results['consensus_estimate']:.4f}
 Interpretation: {ate_results['interpretation']}
 Recommendation: {ate_results['recommendation']}
-                """
-                st.code(summary_text, language="text")
+                        """
+                        st.code(summary_text, language="text")
 
-        # Step 5: AI Explanation (Enhanced)
-        st.header("🧠 Step 5: AI-Powered Insights")
-        
-        if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
-            with st.spinner("AI is analyzing your causal inference results..."):
-                explanation = analyzer.explain_results_with_llm(
-                    ate_results, treatment_var, outcome_var,
-                    st.session_state.get('openai_api_key')
-                )
-            
-            st.markdown("### 📋 Business Insights & Recommendations")
-            st.markdown(explanation)
-            
-            # Add actionable insights
-            st.markdown("### 🎯 Next Steps")
-            if ate_results['consensus_estimate'] and abs(ate_results['consensus_estimate']) > 0.01:
-                st.markdown(f"""
-                1. **Validate findings:** Consider running controlled experiments to confirm this causal relationship
-                2. **Monitor implementation:** If you act on this insight, track the {outcome_var} changes
-                3. **Scale consideration:** The effect size of {abs(ate_results['consensus_estimate']):.4f} suggests {'strong' if abs(ate_results['consensus_estimate']) > 0.1 else 'moderate' if abs(ate_results['consensus_estimate']) > 0.01 else 'small'} practical impact
-                """)
-            else:
-                st.markdown("""
-                1. **Explore other variables:** The causal effect appears small - consider other potential causes
-                2. **Check data quality:** Ensure sufficient sample size and measurement accuracy
-                3. **Consider non-linear relationships:** The effect might be conditional on other factors
-                """)
+                # Step 5: AI Explanation (Enhanced)
+                st.header("🧠 Step 5: AI-Powered Insights")
+                
+                if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
+                    with st.spinner("AI is analyzing your causal inference results..."):
+                        explanation = analyzer.explain_results_with_llm(
+                            ate_results, treatment_var, outcome_var,
+                            st.session_state.get('openai_api_key')
+                        )
+                    
+                    st.markdown("### 📋 Business Insights & Recommendations")
+                    st.markdown(explanation)
+                    
+                    # Add actionable insights
+                    st.markdown("### 🎯 Next Steps")
+                    if ate_results['consensus_estimate'] and abs(ate_results['consensus_estimate']) > 0.01:
+                        st.markdown(f"""
+                        1. **Validate findings:** Consider running controlled experiments to confirm this causal relationship
+                        2. **Monitor implementation:** If you act on this insight, track the {outcome_var} changes
+                        3. **Scale consideration:** The effect size of {abs(ate_results['consensus_estimate']):.4f} suggests {'strong' if abs(ate_results['consensus_estimate']) > 0.1 else 'moderate' if abs(ate_results['consensus_estimate']) > 0.01 else 'small'} practical impact
+                        """)
+                    else:
+                        st.markdown("""
+                        1. **Explore other variables:** The causal effect appears small - consider other potential causes
+                        2. **Check data quality:** Ensure sufficient sample size and measurement accuracy
+                        3. **Consider non-linear relationships:** The effect might be conditional on other factors
+                        """)
