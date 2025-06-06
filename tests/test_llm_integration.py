@@ -1,21 +1,34 @@
 # Simple integration tests to study LLM interface and functionality
 # Run these tests with actual OpenAI API to see how everything works together
-# Note: .gitignore excludes __pycache__ and .pytest_cache directories
 
 import pytest
+import os
 from ai.llm_integration import generate_domain_constraints, explain_results_with_llm
+
+# Simple API key loading - no conftest.py needed
+def get_api_key():
+    """Get API key from local config or environment"""
+    try:
+        from tests.local_config import OPENAI_API_KEY
+        return OPENAI_API_KEY
+    except ImportError:
+        return os.getenv('OPENAI_API_KEY')
 
 class TestLLMIntegration:
     """Integration tests for LLM functionality - studying the interface"""
     
     def test_generate_constraints_integration(self):
         """Test constraint generation with real data to study the interface"""
+        api_key = get_api_key()
+        if not api_key:
+            pytest.skip("No API key available for integration tests")
+            
         # Sample data columns like a real dataset
         columns = ['age', 'income', 'education', 'purchase_amount']
         domain_context = "Customer purchase behavior data where age and education influence income, and income affects purchase decisions"
         
-        # Call the actual function (will use OpenAI if API key is available)
-        result = generate_domain_constraints(columns, domain_context)
+        # Call the actual function with API key
+        result = generate_domain_constraints(columns, domain_context, api_key=api_key)
         
         # Study the interface - what does the function return?
         print(f"Generated constraints: {result}")
@@ -35,6 +48,10 @@ class TestLLMIntegration:
     
     def test_explain_results_integration(self):
         """Test result explanation with real data to study the interface"""
+        api_key = get_api_key()
+        if not api_key:
+            pytest.skip("No API key available for integration tests")
+            
         # Sample analysis results like what causal inference would produce
         ate_results = {
             'consensus_estimate': 0.15,
@@ -49,8 +66,8 @@ class TestLLMIntegration:
         treatment = "marketing_campaign"
         outcome = "sales_increase"
         
-        # Call the actual function (will use OpenAI if API key is available)
-        result = explain_results_with_llm(ate_results, treatment, outcome)
+        # Call the actual function with API key
+        result = explain_results_with_llm(ate_results, treatment, outcome, api_key=api_key)
         
         # Study the interface - what does the function return?
         print(f"AI explanation: {result}")
