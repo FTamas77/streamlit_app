@@ -9,7 +9,16 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 def generate_domain_constraints(columns: List[str], domain_context: str, api_key: str = None) -> Dict:
-    """Use LLM to generate domain-specific constraints"""
+    """Use LLM to generate domain-specific constraints
+    
+    Parameters:
+    - columns (List[str]): MUTABLE - List of dataset column names, changes affect original list
+    - domain_context (str): IMMUTABLE - Business domain description, behaves like pass-by-value  
+    - api_key (str, optional): IMMUTABLE - OpenAI API key, behaves like pass-by-value, defaults to None
+    
+    Returns:
+    - Dict: MUTABLE - Dictionary containing constraint rules for causal discovery
+    """
     if not OPENAI_AVAILABLE:
         st.warning("OpenAI not available. Skipping domain constraints generation.")
         return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "OpenAI not available"}
@@ -62,7 +71,17 @@ def generate_domain_constraints(columns: List[str], domain_context: str, api_key
         return {"forbidden_edges": [], "temporal_order": [], "explanation": "Error generating constraints - check API key"}
 
 def explain_results_with_llm(ate_results: Dict, treatment: str, outcome: str, api_key: str = None) -> str:
-    """Use LLM to explain causal analysis results"""
+    """Use LLM to explain causal analysis results
+    
+    Parameters:
+    - ate_results (Dict): MUTABLE - Dictionary containing causal analysis results, passed by reference
+    - treatment (str): IMMUTABLE - Name of treatment variable, behaves like pass-by-value
+    - outcome (str): IMMUTABLE - Name of outcome variable, behaves like pass-by-value
+    - api_key (str, optional): IMMUTABLE - OpenAI API key, behaves like pass-by-value, defaults to None
+    
+    Returns:
+    - str: IMMUTABLE - Business-friendly explanation of the causal analysis results
+    """
     if not OPENAI_AVAILABLE:
         return "OpenAI package not available. Cannot generate AI explanations."
     

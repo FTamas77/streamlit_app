@@ -5,7 +5,11 @@ import plotly.graph_objects as go
 import networkx as nx
 
 def show_data_preview(data):
-    """Display data preview with metrics"""
+    """Display data preview with metrics
+    
+    Parameters:
+    - data (pd.DataFrame): MUTABLE - Pandas DataFrame, passed by reference
+    """
     col1, col2 = st.columns([2, 1])
     with col1:
         st.subheader("📊 Data Preview")
@@ -17,7 +21,11 @@ def show_data_preview(data):
         st.metric("Missing Values", data.isnull().sum().sum())
 
 def show_data_quality_summary(data):
-    """Show data quality information"""
+    """Show data quality information
+    
+    Parameters:
+    - data (pd.DataFrame): MUTABLE - Pandas DataFrame, passed by reference
+    """
     with st.expander("📈 Data Quality Summary"):
         st.write("**Column Information:**")
         for col in data.columns:
@@ -25,7 +33,11 @@ def show_data_quality_summary(data):
             st.write(col_info)
 
 def show_correlation_heatmap(correlation_matrix):
-    """Display correlation heatmap"""
+    """Display correlation heatmap
+    
+    Parameters:
+    - correlation_matrix (pd.DataFrame or np.ndarray): MUTABLE - Correlation matrix data
+    """
     fig_corr = px.imshow(
         correlation_matrix,
         text_auto=True,
@@ -36,7 +48,12 @@ def show_correlation_heatmap(correlation_matrix):
     st.plotly_chart(fig_corr, use_container_width=True)
 
 def show_causal_graph(adjacency_matrix, columns):
-    """Display interactive causal graph"""
+    """Display interactive causal graph
+    
+    Parameters:
+    - adjacency_matrix (np.ndarray): MUTABLE - 2D array representing causal relationships
+    - columns (List[str]): MUTABLE - List of column names for graph labels
+    """
     G = nx.DiGraph(adjacency_matrix)
     pos = nx.spring_layout(G, seed=42)
     
@@ -85,7 +102,11 @@ def show_causal_graph(adjacency_matrix, columns):
     st.plotly_chart(fig, use_container_width=True)
 
 def show_results_table(ate_results):
-    """Display results in a formatted table"""
+    """Display results in a formatted table
+    
+    Parameters:
+    - ate_results (Dict): MUTABLE - Dictionary containing analysis results, passed by reference
+    """
     results_df = []
     for method, result in ate_results['estimates'].items():
         ci = result['confidence_interval']
@@ -101,3 +122,18 @@ def show_results_table(ate_results):
         })
     
     st.dataframe(pd.DataFrame(results_df), use_container_width=True)
+
+def show_ai_enhanced_results(ate_results, treatment, outcome, api_key=None):
+    """New function using AI integration from other file
+    
+    Parameters:
+    - ate_results (Dict): MUTABLE - Analysis results dictionary
+    - treatment (str): IMMUTABLE - Treatment variable name
+    - outcome (str): IMMUTABLE - Outcome variable name  
+    - api_key (str, optional): IMMUTABLE - API key for AI features
+    """
+    st.subheader("🤖 AI-Enhanced Analysis")
+    
+    # Use function from ai.llm_integration module
+    ai_explanation = explain_results_with_llm(ate_results, treatment, outcome, api_key)
+    st.write(ai_explanation)

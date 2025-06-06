@@ -1,3 +1,12 @@
+# CRITICAL UNDERSTANDING: This entire script runs from TOP to BOTTOM on:
+# 1. ✅ User opens the page (first visit)
+# 2. ✅ User clicks ANY button 
+# 3. ✅ User uploads a file
+# 4. ✅ User types in text area
+# 5. ✅ User selects from dropdown
+# 6. ✅ User checks a checkbox
+# 7. ✅ ANY user interaction that changes widget state
+
 import streamlit as st
 import pandas as pd
 import warnings
@@ -27,19 +36,30 @@ st.set_page_config(
 # Initialize analyzer
 @st.cache_resource
 def get_analyzer():
+    # This creates ONE shared analyzer instance for ALL users
+    # But each user's data and results are kept separate via session_state
     return CausalAnalyzer()
 
 analyzer = get_analyzer()
 
-# Initialize session state
+# Simple session state initialization - much cleaner than state machine
 if 'causal_discovery_completed' not in st.session_state:
     st.session_state['causal_discovery_completed'] = False
+
 if 'selected_treatment' not in st.session_state:
     st.session_state['selected_treatment'] = None
+
 if 'selected_outcome' not in st.session_state:
     st.session_state['selected_outcome'] = None
+
 if 'ate_results' not in st.session_state:
     st.session_state['ate_results'] = None
+
+if 'domain_constraints_generated' not in st.session_state:
+    st.session_state['domain_constraints_generated'] = False
+
+if 'constraints_data' not in st.session_state:
+    st.session_state['constraints_data'] = None
 
 # Sidebar
 with st.sidebar:
@@ -80,6 +100,10 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     if analyzer.load_data(uploaded_file):
+        # 🚦 STATE TRANSITION: Data uploaded
+        st.session_state['data_loaded'] = True
+        st.session_state['causal_discovery_completed'] = False
+        
         st.success("✅ Data loaded successfully!")
         
         # Display data preview
@@ -103,9 +127,12 @@ if uploaded_file:
                         domain_context,
                         st.session_state.get('openai_api_key')
                     )
-                    
-                if constraints:
+                
+                if constraints and constraints.get('explanation') != "No API key provided":
                     st.success("✅ Domain constraints generated!")
+                    st.session_state['constraints_data'] = constraints
+                    st.session_state['domain_constraints_generated'] = True
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         st.json(constraints)
@@ -113,21 +140,39 @@ if uploaded_file:
                         st.info(f"**Explanation:** {constraints.get('explanation', 'No explanation provided')}")
                     
                     analyzer.domain_constraints = constraints
+                else:
+                    st.error("❌ Failed to generate constraints. Check your API key.")
             else:
                 st.warning("Please provide domain context first.")
+        
+        # Show previously generated constraints
+        if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
+            with st.expander("📋 Current Domain Constraints", expanded=False):
+                st.json(st.session_state['constraints_data'])
         
         # Step 3: Causal Discovery
         st.header("🔍 Step 3: Causal Discovery")
         
-        if st.button("🚀 Run Causal Discovery", type="primary"):
+        # Add validation for constraints
+        constraints_ready = (
+            st.session_state.get('domain_constraints_generated') or 
+            st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints")
+        )
+        
+        if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready):
             with st.spinner("Discovering causal relationships..."):
-                success = analyzer.run_causal_discovery(analyzer.domain_constraints)
+                active_constraints = st.session_state.get('constraints_data', {})
+                success = analyzer.run_causal_discovery(active_constraints)
                 
             if success:
                 st.session_state['causal_discovery_completed'] = True
                 st.success("✅ Causal discovery completed!")
+                
+                if active_constraints:
+                    st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
             else:
                 st.session_state['causal_discovery_completed'] = False
+                st.error("❌ Causal discovery failed")
         
         # Show causal discovery results
         if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
@@ -232,20 +277,25 @@ if uploaded_file:
             st.subheader("🔍 Detailed Results by Method")
             show_results_table(ate_results)
             
-            # AI Explanation
+            # AI Explanation - IMPROVED INTEGRATION
             st.header("🧠 AI-Powered Insights")
             
-            if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
-                with st.spinner("AI is analyzing your results..."):
-                    explanation = explain_results_with_llm(
-                        ate_results, treatment_var, outcome_var,
-                        st.session_state.get('openai_api_key')
-                    )
-                
-                st.markdown("### 📋 Business Insights & Recommendations")
-                st.markdown(explanation)
+            # Show button only if API key is available
+            if st.session_state.get('openai_api_key'):
+                if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
+                    with st.spinner("AI is analyzing your results..."):
+                        explanation = explain_results_with_llm(
+                            ate_results, treatment_var, outcome_var,
+                            st.session_state.get('openai_api_key')
+                        )
+                    
+                    st.markdown("### 📋 Business Insights & Recommendations")
+                    st.markdown(explanation)
+            else:
+                st.warning("🔑 Add OpenAI API key in sidebar to get AI-powered explanations")
 
 else:
+    # Landing page when no file is uploaded
     st.info("""
     👆 **Get Started:** Upload your Excel or CSV file above to begin causal analysis.
     

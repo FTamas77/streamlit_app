@@ -1,0 +1,53 @@
+# Pytest cache and test artifacts
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Python bytecode
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Streamlit specific
+.streamlit/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+
+# Data files (if you don't want to commit datasets)
+data/
+*.csv
+*.xlsx
+*.json
+
+# Model files (if large)
+models/*.pkl
+models/*.joblib
