@@ -6,7 +6,7 @@ A Streamlit-based application for causal discovery and causal inference analysis
 
 ### Development Workflow
 - [ ] Create develop branch, so we don't need to change the hosted one. Create branching strategy.
-- [ ] Fix error in the regression tests
+- [ ] Fix errors in the regression tests if there are still any + add automatic email sending
 
 ### Research Tasks
 - [ ] Check how DoWhy uses confounder variables and the graph, how we pass them
