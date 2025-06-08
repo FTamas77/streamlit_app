@@ -1,1 +1,57 @@
+name: Run Tests and Email Results
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install optional dependencies for tests
+        pip install dowhy lingam statsmodels || true
+    
+    - name: Run pytest
+      id: pytest
+      run: |
+        pytest --tb=short --cov=. --cov-report=term-missing > test_results.txt 2>&1 || true
+        echo "exit_code=$?" >> $GITHUB_OUTPUT
+        cat test_results.txt
+    
+    - name: Send email notification
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: "Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
+        to: tfekete@constructor.university
+        from: GitHub Actions <${{ secrets.EMAIL_USERNAME }}>
+        body: |
+          Test results for repository: ${{ github.repository }}
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Commit message: ${{ github.event.head_commit.message }}
+          
+          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
+          
+          Full test output:
+          
+        attachments: test_results.txt
 

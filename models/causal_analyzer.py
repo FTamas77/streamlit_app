@@ -4,7 +4,7 @@ import warnings
 from typing import Dict, List
 import streamlit as st
 
-# Try to import optional dependencies with fallbacks
+# Try to import optional dependencies
 try:
     from lingam import DirectLiNGAM
     LINGAM_AVAILABLE = True
@@ -103,50 +103,53 @@ class CausalAnalyzer:
     
     def run_causal_discovery(self, constraints: Dict = None):
         """Run causal discovery with domain constraints"""
+        if not LINGAM_AVAILABLE:
+            raise ImportError("LiNGAM is required for causal discovery but not available")
+            
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 
-                if LINGAM_AVAILABLE:
-                    self.model = DirectLiNGAM()
+                if constraints:
+                    from utils.constraint_utils import convert_edge_constraints
                     
-                    if constraints:
-                        from utils.constraint_utils import convert_edge_constraints
-                        forbidden = convert_edge_constraints(constraints.get('forbidden_edges', []), self.data.columns)
-                        self.model = DirectLiNGAM(prior_knowledge=forbidden)
+                    # DirectLiNGAM only supports forbidden edges via prior_knowledge
+                    forbidden = convert_edge_constraints(constraints.get('forbidden_edges', []), self.data.columns)
                     
-                    self.model.fit(self.data)
-                    self.adjacency_matrix = self.model.adjacency_matrix_
+                    # For now, just use forbidden edges (temporal order conversion can be added later)
+                    self.model = DirectLiNGAM(prior_knowledge=forbidden)
                 else:
-                    st.info("Using correlation-based causal discovery as fallback")
-                    from utils.fallback_methods import correlation_based_discovery
-                    self.adjacency_matrix = correlation_based_discovery(self.data)
+                    self.model = DirectLiNGAM()
+                
+                self.model.fit(self.data)
+                self.adjacency_matrix = self.model.adjacency_matrix_
+                
+                # Enforce required edges if specified
+                if constraints and 'required_edges' in constraints:
+                    self._enforce_required_edges(constraints['required_edges'])
             
             return True
             
         except Exception as e:
-            st.error(f"Error in causal discovery: {str(e)}")
-            try:
-                from utils.fallback_methods import correlation_based_discovery
-                self.adjacency_matrix = correlation_based_discovery(self.data)
-                st.warning("Used fallback correlation-based method")
-                return True
-            except:
-                return False
+            print(f"Error in causal discovery: {str(e)}")
+            return False
 
     def calculate_ate(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
-        """Calculate Average Treatment Effect using available methods"""
-        try:
-            if DOWHY_AVAILABLE:
-                from calculations.causal_inference import calculate_ate_dowhy
-                return calculate_ate_dowhy(self, treatment, outcome, confounders)
-            else:
-                from calculations.causal_inference import calculate_ate_fallback
-                return calculate_ate_fallback(self, treatment, outcome, confounders)
-                
-        except Exception as e:
-            from calculations.causal_inference import calculate_ate_fallback
-            return calculate_ate_fallback(self, treatment, outcome, confounders)
+        """
+        Calculate Average Treatment Effect using DoWhy
+        
+        Args:
+            treatment: Name of the treatment variable
+            outcome: Name of the outcome variable  
+            confounders: List of confounder variable names (optional)
+                        If provided, these will be used as adjustment variables.
+                        If None, confounders will be identified from the graph structure.
+        """
+        if not DOWHY_AVAILABLE:
+            raise ImportError("DoWhy is required for ATE calculation but not available")
+            
+        from calculations.causal_inference import calculate_ate_dowhy
+        return calculate_ate_dowhy(self, treatment, outcome, confounders)
     
     def analyze_variable_relationships(self) -> Dict:
         """Analyze relationships between variables for better insights"""
@@ -165,3 +168,19 @@ class CausalAnalyzer:
         """Simulate the effect of a policy intervention"""
         from calculations.advanced_analysis import simulate_intervention
         return simulate_intervention(self.data, treatment, outcome, intervention_size)
+    
+    def _enforce_required_edges(self, required_edges: List[List[str]]):
+        """Post-process adjacency matrix to ensure required edges exist"""
+        if self.adjacency_matrix is None:
+            return
+            
+        columns = list(self.data.columns)
+        for edge in required_edges:
+            if len(edge) == 2:
+                from_var, to_var = edge
+                if from_var in columns and to_var in columns:
+                    from_idx = columns.index(from_var)
+                    to_idx = columns.index(to_var)
+                    # Force this edge to exist with minimum threshold
+                    if abs(self.adjacency_matrix[to_idx, from_idx]) < 0.1:
+                        self.adjacency_matrix[to_idx, from_idx] = 0.1

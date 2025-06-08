@@ -14,16 +14,18 @@ def convert_edge_constraints(edge_list: List[List[str]], columns) -> np.ndarray:
             
     return forbidden_matrix
 
-def adjacency_to_graph_string(adjacency_matrix, columns) -> str:
-    """Convert adjacency matrix to DoWhy graph string format"""
-    if adjacency_matrix is None:
-        return ""
-    
-    edges = []
-    
-    for i, source in enumerate(columns):
-        for j, target in enumerate(columns):
-            if abs(adjacency_matrix[i, j]) > 0.1:  # Threshold for edge
-                edges.append(f'"{source}" -> "{target}"')
-    
-    return "; ".join(edges) if edges else ""
+def adjacency_to_dowhy_dot_graph(adjacency_matrix, columns, treatment: str, outcome: str, confounders: list = None):
+    dot_graph = 'digraph {\n'
+
+    # Declare nodes with valid DOT syntax
+    all_nodes = set([treatment, outcome] + (confounders or []))
+    for node in all_nodes:
+        dot_graph += f'"{node}";\n'
+
+    for i, from_var in enumerate(columns):
+        for j, to_var in enumerate(columns):
+            if abs(adjacency_matrix[j, i]) > 0.01:
+                dot_graph += f'"{from_var}" -> "{to_var}";\n'
+
+    dot_graph += '}'
+    return dot_graph

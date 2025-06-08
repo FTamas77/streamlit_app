@@ -3,8 +3,14 @@ import numpy as np
 import streamlit as st
 
 def clean_data(df):
-    """Clean and prepare data for analysis"""
+    """Clean and preprocess the data with proper pandas handling"""
+    if df is None or df.empty:
+        return None
+    
     try:
+        # Make a proper copy to avoid SettingWithCopyWarning
+        df = df.copy()
+        
         # Remove completely empty rows and columns
         df = df.dropna(how='all').dropna(axis=1, how='all')
         
@@ -115,10 +121,12 @@ def _handle_missing_values(df):
     
     # Fill remaining missing values with median
     if df.isnull().sum().sum() > 0:
-        for col in df.columns:
-            if df[col].isnull().sum() > 0:
+        # Handle missing values in numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if df[col].isnull().any():
                 median_value = df[col].median()
-                df[col] = df[col].fillna(median_value)
+                df.loc[:, col] = df[col].fillna(median_value)  # Use .loc to avoid warning
         st.info("ℹ️ Filled missing values with column medians")
     
     # Remove infinite values

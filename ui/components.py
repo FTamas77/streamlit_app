@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import networkx as nx
+from ai.llm_integration import explain_results_with_llm
 
 def show_data_preview(data):
     """Display data preview with metrics
