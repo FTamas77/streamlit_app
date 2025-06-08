@@ -11,3 +11,6 @@ A Streamlit-based application for causal discovery and causal inference analysis
 ### Research Tasks
 - [ ] Check how DoWhy uses confounder variables and the graph, how we pass them
 - [ ] Use 2 different causal discovery algorithms and find a way to merge them together
+
+### Bug Fixes
+- [ ] Fix DirectLiNGAM constraint handling: when required edges are specified, DirectLiNGAM only returns those edges instead of the full causal graph. Add integration tests for DirectLiNGAM to ensure proper constraint handling and edge discovery.
