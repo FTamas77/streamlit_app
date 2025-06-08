@@ -38,37 +38,37 @@ jobs:
         cat test_results.txt
       continue-on-error: true
     
-    - name: Validate email secrets
-      run: |
-        if [ -z "${{ secrets.EMAIL_USERNAME }}" ]; then
-          echo "Error: EMAIL_USERNAME secret is not set"
-          exit 1
-        fi
-        if [ -z "${{ secrets.EMAIL_APP_PASSWORD }}" ]; then
-          echo "Error: EMAIL_APP_PASSWORD secret is not set"
-          exit 1
-        fi
-        echo "Email secrets validation passed"
+    # - name: Validate email secrets
+    #   run: |
+    #     if [ -z "${{ secrets.EMAIL_USERNAME }}" ]; then
+    #       echo "Error: EMAIL_USERNAME secret is not set"
+    #       exit 1
+    #     fi
+    #     if [ -z "${{ secrets.EMAIL_APP_PASSWORD }}" ]; then
+    #       echo "Error: EMAIL_APP_PASSWORD secret is not set"
+    #       exit 1
+    #     fi
+    #     echo "Email secrets validation passed"
     
-    - name: Send email notification
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: smtp.gmail.com
-        server_port: 587
-        username: ${{ secrets.EMAIL_USERNAME }}
-        password: ${{ secrets.EMAIL_APP_PASSWORD }}
-        subject: "Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
-        to: tfekete@constructor.university
-        from: ${{ secrets.EMAIL_USERNAME }}
-        body: |
-          Test results for repository: ${{ github.repository }}
-          Branch: ${{ github.ref_name }}
-          Commit: ${{ github.sha }}
-          Commit message: ${{ github.event.head_commit.message }}
-          
-          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
-          
-          Full test output:
-          
-        attachments: test_results.txt
+    # - name: Send email notification
+    #   uses: dawidd6/action-send-mail@v3
+    #   with:
+    #     server_address: smtp-mail.outlook.com
+    #     server_port: 587
+    #     username: ${{ secrets.EMAIL_USERNAME }}
+    #     password: ${{ secrets.EMAIL_APP_PASSWORD }}
+    #     subject: "Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
+    #     to: tfekete@constructor.university
+    #     from: ${{ secrets.EMAIL_USERNAME }}
+    #     body: |
+    #       Test results for repository: ${{ github.repository }}
+    #       Branch: ${{ github.ref_name }}
+    #       Commit: ${{ github.sha }}
+    #       Commit message: ${{ github.event.head_commit.message }}
+    #       
+    #       Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
+    #       
+    #       Full test output:
+    #       
+    #     attachments: test_results.txt
 
