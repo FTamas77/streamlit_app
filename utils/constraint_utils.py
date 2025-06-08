@@ -15,6 +15,10 @@ def convert_edge_constraints(edge_list: List[List[str]], columns) -> np.ndarray:
     return forbidden_matrix
 
 def adjacency_to_dowhy_dot_graph(adjacency_matrix, columns, treatment: str, outcome: str, confounders: list = None):
+    """Convert adjacency matrix to DOT graph format for DoWhy - only call when matrix exists"""
+    if adjacency_matrix is None or not hasattr(adjacency_matrix, 'shape'):
+        return None
+        
     dot_graph = 'digraph {\n'
 
     # Declare nodes with valid DOT syntax
@@ -22,10 +26,12 @@ def adjacency_to_dowhy_dot_graph(adjacency_matrix, columns, treatment: str, outc
     for node in all_nodes:
         dot_graph += f'"{node}";\n'
 
-    for i, from_var in enumerate(columns):
-        for j, to_var in enumerate(columns):
-            if abs(adjacency_matrix[j, i]) > 0.01:
-                dot_graph += f'"{from_var}" -> "{to_var}";\n'
+    # Process adjacency matrix
+    if adjacency_matrix.shape[0] == len(columns) and adjacency_matrix.shape[1] == len(columns):
+        for i, from_var in enumerate(columns):
+            for j, to_var in enumerate(columns):
+                if abs(adjacency_matrix[i, j]) > 0.01:
+                    dot_graph += f'"{from_var}" -> "{to_var}";\n'
 
     dot_graph += '}'
     return dot_graph

@@ -114,7 +114,8 @@ def _handle_missing_values(df):
         dropped_cols = [col for col in df.columns if col not in cols_to_keep]
         st.warning(f"⚠️ Dropped columns with >70% missing values: {dropped_cols}")
     
-    df = df[cols_to_keep]
+    # Create a proper copy to avoid SettingWithCopyWarning
+    df = df[cols_to_keep].copy()
     
     if df.shape[1] < 2:
         return None
@@ -126,7 +127,7 @@ def _handle_missing_values(df):
         for col in numeric_cols:
             if df[col].isnull().any():
                 median_value = df[col].median()
-                df[col] = df[col].fillna(median_value)  # Fixed: removed .loc since df is already a copy
+                df[col] = df[col].fillna(median_value)
         st.info("ℹ️ Filled missing values with column medians")
     
     # Remove infinite values

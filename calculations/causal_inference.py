@@ -23,23 +23,30 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         from utils.constraint_utils import adjacency_to_dowhy_dot_graph
         from calculations.metrics import calculate_simple_metrics, generate_simple_recommendation, interpret_ate
         
-        # Convert adjacency matrix to DOT graph
-        dot_graph = adjacency_to_dowhy_dot_graph(
-            analyzer.adjacency_matrix, 
-            analyzer.data.columns, 
-            treatment, 
-            outcome, 
-            confounders
-        )
+        # Only create DOT graph if we have an adjacency matrix from causal discovery
+        graph = None
+        if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
+            dot_graph = adjacency_to_dowhy_dot_graph(
+                analyzer.adjacency_matrix, 
+                analyzer.data.columns.tolist(), 
+                treatment, 
+                outcome, 
+                confounders
+            )
+            graph = dot_graph
         
-        # Create causal model - use confounders as common_causes if specified
-        causal_model = CausalModel(
-            data=analyzer.data,
-            treatment=treatment,
-            outcome=outcome,
-            graph=dot_graph,
-            common_causes=confounders if confounders else None
-        )
+        # Create causal model - only pass graph if we have one
+        causal_model_args = {
+            'data': analyzer.data,
+            'treatment': treatment,
+            'outcome': outcome,
+            'common_causes': confounders if confounders else None
+        }
+        
+        if graph is not None:
+            causal_model_args['graph'] = graph
+            
+        causal_model = CausalModel(**causal_model_args)
         
         # Identify causal effect
         identified_estimand = causal_model.identify_effect(proceed_when_unidentifiable=True)
