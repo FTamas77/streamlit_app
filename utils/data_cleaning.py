@@ -126,7 +126,7 @@ def _handle_missing_values(df):
         for col in numeric_cols:
             if df[col].isnull().any():
                 median_value = df[col].median()
-                df.loc[:, col] = df[col].fillna(median_value)  # Use .loc to avoid warning
+                df[col] = df[col].fillna(median_value)  # Fixed: removed .loc since df is already a copy
         st.info("ℹ️ Filled missing values with column medians")
     
     # Remove infinite values

@@ -165,3 +165,4 @@ models/__pycache__/causal_analyzer.cpython-312.pyc
 calculations/__pycache__/causal_inference.cpython-312.pyc
 utils/__pycache__/data_cleaning.cpython-312.pyc
 utils/__pycache__/constraint_utils.cpython-312.pyc
+ui/__pycache__/components.cpython-312.pyc
