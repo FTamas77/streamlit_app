@@ -26,12 +26,17 @@ jobs:
         # Install optional dependencies for tests
         pip install dowhy lingam statsmodels || true
     
+    - name: Set up Python path for imports
+      run: |
+        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+    
     - name: Run pytest
       id: pytest
       run: |
-        pytest --tb=short --cov=. --cov-report=term-missing > test_results.txt 2>&1 || true
+        pytest --tb=short --cov=. --cov-report=term-missing > test_results.txt 2>&1
         echo "exit_code=$?" >> $GITHUB_OUTPUT
         cat test_results.txt
+      continue-on-error: true
     
     - name: Send email notification
       uses: dawidd6/action-send-mail@v3
