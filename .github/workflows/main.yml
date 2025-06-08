@@ -39,10 +39,10 @@ jobs:
         server_address: smtp.gmail.com
         server_port: 587
         username: ${{ secrets.EMAIL_USERNAME }}
-        password: ${{ secrets.EMAIL_PASSWORD }}
+        password: ${{ secrets.EMAIL_APP_PASSWORD }}
         subject: "Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
         to: tfekete@constructor.university
-        from: GitHub Actions <${{ secrets.EMAIL_USERNAME }}>
+        from: ${{ secrets.EMAIL_USERNAME }}
         body: |
           Test results for repository: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
