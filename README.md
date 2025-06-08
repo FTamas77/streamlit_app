@@ -1,7 +1,12 @@
 # Causal AI Analysis Application
 
-## TODOs:
+A Streamlit-based application for causal discovery and causal inference analysis.
+
+## TODOs
 
 ### Development Workflow
-- [ ] create develop branch, so we dont need change the hosted one
-- [ ] fix error in the regression tests
+- [ ] Create develop branch, so we don't need to change the hosted one
+- [ ] Fix error in the regression tests
+
+### Research Tasks
+- [ ] Use 2 different causal discovery algorithms and find a way to merge them together
