@@ -1,91 +1,144 @@
-# Integration tests for causal discovery functionality
-# Testing causal discovery algorithms with constraints
+#!/usr/bin/env python3
+"""
+Clean integration tests for causal discovery.
+Supports both pytest and manual execution.
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 import numpy as np
 import pandas as pd
-from models.causal_analyzer import CausalAnalyzer
-from ai.llm_integration import generate_domain_constraints # Assuming this is used or was planned
+from causal.analyzer import CausalAnalyzer
 
-@pytest.mark.integration
-def test_causal_discovery_with_constraints_integration():
-    """Test causal discovery with a known causal chain and constraints."""
-    np.random.seed(44) # Changed seed
-    n_samples = 5000
+def test_causal_discovery_smoke_test():
+    """
+    Smoke test: Basic causal discovery without constraints (happy path).
+    This is a simple integration test to verify the core functionality works.
+    """
+    print("🧪 Running causal discovery smoke test...")
     
-    # factor_A -> factor_B -> factor_C -> outcome_D
-    # Strengthen A->B relationship and reduce its noise
-    factor_A = np.random.normal(0, 1, n_samples)
-    factor_B = factor_A * 1.2 + np.random.normal(0, 0.1, n_samples) # Stronger coefficient, lower noise
-    factor_C = factor_B * 0.7 + np.random.normal(0, 0.3, n_samples)
-    outcome_D = factor_C * 0.6 + np.random.normal(0, 0.4, n_samples)
+    # Set seed for reproducibility
+    np.random.seed(42)
+    n_samples = 1000
+    
+    # Create simple causal chain: X -> Y -> Z
+    X = np.random.normal(0, 1, n_samples)
+    Y = 2.0 * X + np.random.normal(0, 0.5, n_samples)
+    Z = 1.5 * Y + np.random.normal(0, 0.5, n_samples)
     
     data = pd.DataFrame({
-        'factor_A': factor_A,
-        'factor_B': factor_B,
-        'factor_C': factor_C,
-        'outcome_D': outcome_D
+        'X': X,
+        'Y': Y, 
+        'Z': Z
     })
     
-    print(f"Dataset shape: {data.shape}")
-    print("Data correlations:")
-    print(data.corr())
+    print(f"📊 Created test data with shape: {data.shape}")
     
+    # Initialize analyzer
+    analyzer = CausalAnalyzer() 
+    analyzer.data = data
+    
+    # Run discovery without constraints (smoke test)
+    print("🔍 Running causal discovery...")
+    success = analyzer.run_causal_discovery()
+    
+    # Assertions
+    assert success, "Basic causal discovery should succeed"
+    assert analyzer.adjacency_matrix is not None, "Adjacency matrix should be generated"
+    assert analyzer.adjacency_matrix.shape == (3, 3), "Adjacency matrix should be 3x3"
+    
+    # Check that some causal relationships were discovered
+    total_edges = np.sum(np.abs(analyzer.adjacency_matrix) > 0.01)
+    assert total_edges > 0, "Should discover at least some causal relationships"
+    
+    print("✅ Smoke test passed: Basic causal discovery works")
+
+def test_causal_discovery_with_constraints():
+    """
+    Test causal discovery with prior knowledge - structure aligned with LLM.
+    Tests the constraint format that matches what the LLM module generates.
+    """
+    print("🧪 Running causal discovery with constraints test...")
+    
+    np.random.seed(44)
+    n_samples = 1000
+    
+    # Create causal structure: A -> B -> C, A -> C
+    A = np.random.normal(0, 1, n_samples)
+    B = 1.5 * A + np.random.normal(0, 0.3, n_samples)  
+    C = 0.8 * A + 1.2 * B + np.random.normal(0, 0.3, n_samples)
+    
+    data = pd.DataFrame({
+        'A': A,
+        'B': B,
+        'C': C
+    })
+    
+    print(f"📊 Created constrained test data with shape: {data.shape}")
+    
+    # Define constraints in LLM-aligned structure
+    constraints = {
+        "forbidden_edges": [["C", "A"], ["C", "B"]],  # C cannot cause A or B
+        "required_edges": [],
+        "sink_variables": ["C"],  # C should be a sink (no outgoing edges)
+        "exogenous_variables": ["A"]  # A should be exogenous (no incoming edges)
+    }
+    
+    print(f"🚫 Using constraints: {constraints}")
+    
+    # Initialize analyzer with constraints
     analyzer = CausalAnalyzer()
     analyzer.data = data
     
-    # Define constraints based on the known causal chain A->B->C->D
-    # These would typically come from domain knowledge or an LLM
-    constraints = {
-        'forbidden_edges': [
-            ['outcome_D', 'factor_A'], 
-            ['factor_C', 'factor_A'],
-            ['outcome_D', 'factor_B'] # D should not directly cause B
-        ],
-        'required_edges': [
-            ['factor_A', 'factor_B'], 
-            ['factor_B', 'factor_C'], 
-            ['factor_C', 'outcome_D']
-        ],
-        'temporal_order': ['factor_A', 'factor_B', 'factor_C', 'outcome_D'],
-        'explanation': 'Sequential causal chain A->B->C->D'
-    }
-    print(f"Using constraints: {constraints}")
-    
-    # Test actual causal discovery with constraints
+    # Run discovery with constraints
+    print("🔍 Running constrained causal discovery...")
     success = analyzer.run_causal_discovery(constraints=constraints)
     
-    assert success, "Causal discovery process failed"
-    print(f"Discovery success: {success}")
-    assert analyzer.adjacency_matrix is not None, "Adjacency matrix not generated"
-    print(f"Adjacency matrix shape: {analyzer.adjacency_matrix.shape}")
-    print(f"Adjacency matrix:\n{analyzer.adjacency_matrix}")
+    # Assertions
+    assert success, "Constrained causal discovery should succeed"
+    assert analyzer.adjacency_matrix is not None, "Adjacency matrix should be generated"
     
-    # # Validate the discovered graph structure
-    # # Columns: ['factor_A', 'factor_B', 'factor_C', 'outcome_D']
-    # # Indices: A=0, B=1, C=2, D=3
-    # # Adjacency matrix convention: M[to_idx, from_idx] != 0 implies an edge from_idx -> to_idx
-    
-    # # Check for required edges
-    # # factor_A -> factor_B
-    # assert analyzer.adjacency_matrix[1, 0] != 0, "Edge factor_A -> factor_B is missing"
-    # # factor_B -> factor_C
-    # assert analyzer.adjacency_matrix[2, 1] != 0, "Edge factor_B -> factor_C is missing"
-    # # factor_C -> outcome_D
-    # assert analyzer.adjacency_matrix[3, 2] != 0, "Edge factor_C -> outcome_D is missing"
-    
-    # # Check for absence of some forbidden/incorrect edges based on constraints and true structure
-    # # outcome_D -> factor_A (forbidden by constraint and structure)
-    # assert analyzer.adjacency_matrix[0, 3] == 0, "Edge outcome_D -> factor_A should not exist"
-    # # factor_C -> factor_A (forbidden by constraint and structure)
-    # assert analyzer.adjacency_matrix[0, 2] == 0, "Edge factor_C -> factor_A should not exist"
-    # # factor_B -> factor_A (reverse of true edge)
-    # assert analyzer.adjacency_matrix[0, 1] == 0, "Edge factor_B -> factor_A (reverse) should not exist"    # outcome_D -> factor_B (forbidden by constraint and structure)
-    # assert analyzer.adjacency_matrix[1, 3] == 0, "Edge outcome_D -> factor_B should not exist"
+    print("✅ Constraint test passed: Causal discovery with constraints works")
 
-    # # Validate the test data structure
-    # assert data.shape[0] == n_samples
-    # assert 'factor_A' in data.columns
-    # assert 'outcome_D' in data.columns
-
-    # print("✅ Causal discovery test with constraints passed with current assertions.")
+if __name__ == "__main__":
+    """Manual execution for debugging."""
+    
+    print("=" * 70)
+    print("🧪 CAUSAL DISCOVERY INTEGRATION TESTS - MANUAL EXECUTION")
+    print("=" * 70)
+    
+    tests = [
+        ("Smoke Test (No Constraints)", test_causal_discovery_smoke_test),
+        ("Prior Knowledge Constraints", test_causal_discovery_with_constraints),
+    ]
+    
+    passed = 0
+    failed = 0
+    
+    for test_name, test_func in tests:
+        print(f"\n{'='*50}")
+        print(f"🎯 {test_name}")
+        print(f"{'='*50}")
+        
+        try:
+            test_func()
+            print(f"✅ PASSED: {test_name}")
+            passed += 1
+        except Exception as e:
+            print(f"❌ FAILED: {test_name}")
+            print(f"💥 Error: {e}")
+            import traceback
+            traceback.print_exc()
+            failed += 1
+    
+    print(f"\n{'='*70}")
+    print(f"📊 FINAL RESULTS: {passed} passed, {failed} failed")
+    print(f"{'='*70}")
+    
+    if failed == 0:
+        print("🎉 All tests passed! Causal discovery integration is working!")
+    else:
+        print("⚠️ Some tests failed - check the output above for details")

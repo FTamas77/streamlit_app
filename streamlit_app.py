@@ -16,8 +16,8 @@ import os
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
 
-from models.causal_analyzer import CausalAnalyzer
-from ai.llm_integration import generate_domain_constraints, explain_results_with_llm
+from causal.analyzer import CausalAnalyzer
+from llm.llm import generate_domain_constraints, explain_results_with_llm
 from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table
 
 # Comprehensive warning suppression

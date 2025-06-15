@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import networkx as nx
-from ai.llm_integration import explain_results_with_llm
+from llm.llm import explain_results_with_llm
 
 def show_data_preview(data):
     """Display data preview with metrics
@@ -49,33 +49,77 @@ def show_correlation_heatmap(correlation_matrix):
     st.plotly_chart(fig_corr, use_container_width=True)
 
 def show_causal_graph(adjacency_matrix, columns):
-    """Display interactive causal graph
+    """Display interactive causal graph with directional arrows
     
     Parameters:
     - adjacency_matrix (np.ndarray): MUTABLE - 2D array representing causal relationships
     - columns (List[str]): MUTABLE - List of column names for graph labels
     """
-    G = nx.DiGraph(adjacency_matrix)
-    pos = nx.spring_layout(G, seed=42)
+    import numpy as np
     
-    # Extract edges with weights
-    edge_x, edge_y = [], []
-    for edge in G.edges():
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
+    # Create NetworkX directed graph from adjacency matrix
+    G = nx.DiGraph()
+    
+    # Add nodes with column names
+    for i, col in enumerate(columns):
+        G.add_node(i, label=col)
+    
+    # Add edges based on adjacency matrix (only if weight > threshold)
+    threshold = 0.01
+    for i in range(len(columns)):
+        for j in range(len(columns)):
+            if abs(adjacency_matrix[i, j]) > threshold:
+                # DirectLiNGAM: adjacency_matrix[i,j] represents effect from j to i
+                G.add_edge(j, i, weight=adjacency_matrix[i, j])
+    
+    # Position nodes using spring layout
+    pos = nx.spring_layout(G, seed=42, k=3, iterations=50)
     
     # Create plot
     fig = go.Figure()
     
-    # Add edges
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y,
-        line=dict(width=2, color='gray'),
-        hoverinfo='none',
-        mode='lines'
-    ))
+    # Add edges with arrows
+    for edge in G.edges(data=True):
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        weight = edge[2]['weight']
+        
+        # Calculate arrow position (90% along the edge)
+        arrow_x = x0 + 0.9 * (x1 - x0)
+        arrow_y = y0 + 0.9 * (y1 - y0)
+        
+        # Calculate arrow direction
+        dx = x1 - x0
+        dy = y1 - y0
+        length = np.sqrt(dx**2 + dy**2)
+        if length > 0:
+            dx /= length
+            dy /= length
+          # Edge line (consistent width for all edges)
+        fig.add_trace(go.Scatter(
+            x=[x0, x1], y=[y0, y1],
+            line=dict(width=2, color='gray'),
+            hoverinfo='text',
+            hovertext=f"{columns[edge[0]]} → {columns[edge[1]]}<br>Weight: {weight:.3f}",
+            mode='lines',
+            showlegend=False
+        ))
+        
+        # Arrow head
+        arrow_size = 0.03
+        arrow_x1 = arrow_x - arrow_size * (dx + dy)
+        arrow_y1 = arrow_y - arrow_size * (dy - dx)
+        arrow_x2 = arrow_x - arrow_size * (dx - dy)
+        arrow_y2 = arrow_y - arrow_size * (dy + dx)
+        
+        fig.add_trace(go.Scatter(
+            x=[arrow_x1, arrow_x, arrow_x2],
+            y=[arrow_y1, arrow_y, arrow_y2],
+            line=dict(width=2, color='darkgray'),
+            mode='lines',
+            showlegend=False,
+            hoverinfo='skip'
+        ))
     
     # Add nodes
     node_x = [pos[node][0] for node in G.nodes()]
@@ -86,19 +130,37 @@ def show_causal_graph(adjacency_matrix, columns):
         x=node_x, y=node_y,
         mode='markers+text',
         hoverinfo='text',
+        hovertext=[f"Variable: {text}" for text in node_text],
         text=node_text,
         textposition="middle center",
-        marker=dict(size=50, color='lightblue', line=dict(width=2, color='darkblue'))
+        textfont=dict(size=12, color='darkblue'),
+        marker=dict(
+            size=60, 
+            color='lightblue', 
+            line=dict(width=2, color='darkblue')
+        ),
+        showlegend=False
     ))
     
+    # Add title with edge count
+    edge_count = len(G.edges())
+    title_text = f"Causal Graph ({edge_count} causal relationships)"
+    
     fig.update_layout(
-        title="Causal Graph",
+        title=dict(text=title_text, x=0.5, font=dict(size=16)),
         showlegend=False,
         hovermode='closest',
-        margin=dict(b=20,l=5,r=5,t=40),
+        margin=dict(b=20, l=5, r=5, t=40),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor='white',
+        height=500
     )
+    
+    if edge_count == 0:
+        st.info("ℹ️ No causal relationships detected (all weights below threshold)")
+    else:
+        st.info(f"📊 Showing {edge_count} causal relationships. Hover over edges to see weights.")
     
     st.plotly_chart(fig, use_container_width=True)
 
@@ -123,18 +185,3 @@ def show_results_table(ate_results):
         })
     
     st.dataframe(pd.DataFrame(results_df), use_container_width=True)
-
-def show_ai_enhanced_results(ate_results, treatment, outcome, api_key=None):
-    """New function using AI integration from other file
-    
-    Parameters:
-    - ate_results (Dict): MUTABLE - Analysis results dictionary
-    - treatment (str): IMMUTABLE - Treatment variable name
-    - outcome (str): IMMUTABLE - Outcome variable name  
-    - api_key (str, optional): IMMUTABLE - API key for AI features
-    """
-    st.subheader("🤖 AI-Enhanced Analysis")
-    
-    # Use function from ai.llm_integration module
-    ai_explanation = explain_results_with_llm(ate_results, treatment, outcome, api_key)
-    st.write(ai_explanation)

@@ -21,7 +21,7 @@ def generate_domain_constraints(columns: List[str], domain_context: str, api_key
     """
     if not OPENAI_AVAILABLE:
         st.warning("OpenAI not available. Skipping domain constraints generation.")
-        return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "OpenAI not available"}
+        return {"forbidden_edges": [], "required_edges": []}
     
     try:
         effective_api_key = api_key
@@ -33,7 +33,7 @@ def generate_domain_constraints(columns: List[str], domain_context: str, api_key
         
         if not effective_api_key:
             st.error("Please provide an OpenAI API key to use AI features")
-            return {"forbidden_edges": [], "required_edges": [], "temporal_order": [], "explanation": "No API key provided"}
+            return {"forbidden_edges": [], "required_edges": []}
         
         openai.api_key = effective_api_key
         
@@ -44,9 +44,7 @@ def generate_domain_constraints(columns: List[str], domain_context: str, api_key
         Generate domain constraints for causal discovery in JSON format:
         {{
             "forbidden_edges": [["source", "target"], ...],
-            "required_edges": [["source", "target"], ...],
-            "temporal_order": ["earliest_var", "middle_var", "latest_var", ...],
-            "explanation": "Brief explanation of constraints"
+            "required_edges": [["source", "target"], ...]
         }}
         
         Consider:
@@ -68,7 +66,7 @@ def generate_domain_constraints(columns: List[str], domain_context: str, api_key
         
     except Exception as e:
         st.error(f"Error generating constraints: {str(e)}")
-        return {"forbidden_edges": [], "temporal_order": [], "explanation": "Error generating constraints - check API key"}
+        return {"forbidden_edges": [], "required_edges": []}
 
 def explain_results_with_llm(ate_results: Dict, treatment: str, outcome: str, api_key: str = None) -> str:
     """Use LLM to explain causal analysis results

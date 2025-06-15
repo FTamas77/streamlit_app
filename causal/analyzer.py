@@ -4,13 +4,10 @@ import warnings
 from typing import Dict, List
 import streamlit as st
 
-# Try to import optional dependencies
-try:
-    from lingam import DirectLiNGAM
-    LINGAM_AVAILABLE = True
-except ImportError:
-    LINGAM_AVAILABLE = False
+# Import our new discovery module
+from causal.discovery import CausalDiscovery
 
+# Try to import optional dependencies
 try:
     import dowhy
     from dowhy import CausalModel
@@ -19,11 +16,11 @@ except ImportError:
     DOWHY_AVAILABLE = False
 
 class CausalAnalyzer:
-    """Main class for causal analysis pipeline"""
+    """Main class for causal analysis pipeline - orchestrates discovery and inference"""
     
     def __init__(self):
         self.data = None
-        self.model = None
+        self.discovery = CausalDiscovery()
         self.adjacency_matrix = None
         self.causal_model = None
         self.domain_constraints = None
@@ -94,8 +91,7 @@ class CausalAnalyzer:
                 st.error("Dataset must have at least 10 rows for meaningful analysis")
                 return False
             
-            return True
-            
+            return True            
         except Exception as e:
             st.error(f"Unexpected error loading file: {str(e)}")
             st.info("Please check your file format and try again")
@@ -103,57 +99,10 @@ class CausalAnalyzer:
     
     def run_causal_discovery(self, constraints: Dict = None):
         """Run causal discovery with domain constraints"""
-        if not LINGAM_AVAILABLE:
-            raise ImportError("LiNGAM is required for causal discovery but not available")
-            
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                
-                print(f"DEBUG: Running DirectLiNGAM on data shape: {self.data.shape}")
-                print(f"DEBUG: Data columns: {list(self.data.columns)}")
-                
-                if constraints:
-                    from utils.constraint_utils import convert_edge_constraints
-                    
-                    # DirectLiNGAM only supports forbidden edges via prior_knowledge
-                    forbidden = convert_edge_constraints(constraints.get('forbidden_edges', []), self.data.columns)
-                    print(f"DEBUG: Using constraints - forbidden matrix shape: {forbidden.shape}")
-                    
-                    self.model = DirectLiNGAM(prior_knowledge=forbidden)
-                else:
-                    print("DEBUG: Running DirectLiNGAM without constraints")
-                    self.model = DirectLiNGAM()
-                
-                self.model.fit(self.data)
-                self.adjacency_matrix = self.model.adjacency_matrix_
-                
-                print(f"DEBUG: DirectLiNGAM produced adjacency matrix shape: {self.adjacency_matrix.shape}")
-                print(f"DEBUG: DirectLiNGAM adjacency matrix:\n{self.adjacency_matrix}")
-                
-                # Check if matrix is lower triangular (proper causal order)
-                is_lower_triangular = np.allclose(self.adjacency_matrix, np.tril(self.adjacency_matrix))
-                print(f"DEBUG: Matrix is lower triangular (proper causal order): {is_lower_triangular}")
-                
-                # Check causal order
-                if hasattr(self.model, 'causal_order_'):
-                    print(f"DEBUG: Causal order: {self.model.causal_order_}")
-                    causal_order_vars = [self.data.columns[i] for i in self.model.causal_order_]
-                    print(f"DEBUG: Causal order variables: {causal_order_vars}")
-                
-                # Count non-zero edges
-                non_zero_edges = np.count_nonzero(np.abs(self.adjacency_matrix) > 0.01)
-                print(f"DEBUG: Number of edges with |weight| > 0.01: {non_zero_edges}")
-                
-                # Enforce required edges if specified
-                if constraints and 'required_edges' in constraints:
-                    self._enforce_required_edges(constraints['required_edges'])
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR in causal discovery: {str(e)}")
-            return False
+        success = self.discovery.run_discovery(self.data, constraints)
+        if success:
+            self.adjacency_matrix = self.discovery.get_adjacency_matrix()
+        return success
 
     def calculate_ate(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
         """
@@ -169,7 +118,7 @@ class CausalAnalyzer:
         if not DOWHY_AVAILABLE:
             raise ImportError("DoWhy is required for ATE calculation but not available")
             
-        from calculations.causal_inference import calculate_ate_dowhy
+        from causal.inference import calculate_ate_dowhy
         return calculate_ate_dowhy(self, treatment, outcome, confounders)
     
     def analyze_variable_relationships(self) -> Dict:
@@ -177,31 +126,5 @@ class CausalAnalyzer:
         if self.data is None:
             return {}
         
-        from calculations.relationship_analysis import analyze_relationships
+        from analytics.relationship_analysis import analyze_relationships
         return analyze_relationships(self.data)
-    
-    def analyze_effect_heterogeneity(self, treatment: str, outcome: str, moderator: str = None) -> Dict:
-        """Analyze heterogeneous treatment effects"""
-        from calculations.advanced_analysis import analyze_heterogeneity
-        return analyze_heterogeneity(self.data, treatment, outcome, moderator)
-    
-    def simulate_policy_intervention(self, treatment: str, outcome: str, intervention_size: float) -> Dict:
-        """Simulate the effect of a policy intervention"""
-        from calculations.advanced_analysis import simulate_intervention
-        return simulate_intervention(self.data, treatment, outcome, intervention_size)
-    
-    def _enforce_required_edges(self, required_edges: List[List[str]]):
-        """Post-process adjacency matrix to ensure required edges exist"""
-        if self.adjacency_matrix is None:
-            return
-            
-        columns = list(self.data.columns)
-        for edge in required_edges:
-            if len(edge) == 2:
-                from_var, to_var = edge
-                if from_var in columns and to_var in columns:
-                    from_idx = columns.index(from_var)
-                    to_idx = columns.index(to_var)
-                    # Force this edge to exist with minimum threshold
-                    if abs(self.adjacency_matrix[to_idx, from_idx]) < 0.1:
-                        self.adjacency_matrix[to_idx, from_idx] = 0.1
