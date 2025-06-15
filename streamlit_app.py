@@ -33,6 +33,78 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Professional CSS styling
+st.markdown("""
+<style>
+    .main-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }    .hero-section {
+        text-align: center; 
+        padding: 2.5rem 2rem; 
+        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%); 
+        border-radius: 15px; 
+        margin-bottom: 2.5rem; 
+        color: #2c3e50;
+        box-shadow: 0 10px 30px rgba(255, 154, 158, 0.3);
+    }    .hero-title {
+        font-size: 2.8rem; 
+        font-weight: 700; 
+        margin-bottom: 0.8rem; 
+        text-shadow: 1px 1px 3px rgba(0,0,0,0.15);
+        letter-spacing: -0.02em;        color: #2c3e50;
+    }    .hero-subtitle {
+        font-size: 1.2rem; 
+        font-weight: 400; 
+        margin: 1rem 0 0 0; 
+        opacity: 0.95; 
+        line-height: 1.7;
+        max-width: 95%;
+        margin-left: auto;
+        margin-right: auto;
+        color: #2c3e50;
+        text-align: center;
+        padding: 0 1rem;
+    }
+    .step-header {
+        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        padding: 1.2rem 1.5rem;
+        border-left: 4px solid #e17055;
+        border-radius: 0 10px 10px 0;
+        margin: 2rem 0 1.5rem 0;
+        box-shadow: 0 4px 15px rgba(252, 182, 159, 0.3);
+    }
+    .step-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-weight: 600;
+    }
+    .professional-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        border: 1px solid #e1e5e9;
+        margin: 1rem 0;
+    }    .stButton > button {
+        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        color: #2c3e50;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(255, 154, 158, 0.3);
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 154, 158, 0.4);
+    }    .sidebar .sidebar-content {
+        background: linear-gradient(180deg, #fff5f5 0%, #ffffff 100%);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize analyzer
 @st.cache_resource
 def get_analyzer():
@@ -69,7 +141,7 @@ with st.sidebar:
     api_key = st.text_input(
         "OpenAI API Key", 
         type="password", 
-        help="Enter your OpenAI API key for LLM features",
+        help="Required for LLM-guided domain constraints and insights",
         value=st.session_state.get('openai_api_key', '')
     )
     
@@ -86,12 +158,20 @@ with st.sidebar:
     5. Get AI explanations
     """)
 
-# Main interface
-st.title("🤖 Causal AI Platform")
-st.markdown("Discover causal relationships in your data using advanced AI and statistical methods.")
+# Main interface with professional hero section
+st.markdown("""
+<div class="hero-section">
+    <h1 class="hero-title">Causal AI Platform</h1>
+    <p class="hero-subtitle">
+        Discover causal relationships and quantify treatment effects with advanced AI-powered analysis. 
+        Our platform combines cutting-edge algorithms with intelligent domain expertise to uncover hidden patterns, 
+        measure intervention impacts, and deliver actionable insights for data-driven decision making.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 # Step 1: Data Upload
-st.header("📁 Step 1: Data Upload")
+st.markdown('<div class="step-header"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
 uploaded_file = st.file_uploader(
     "Upload your Excel or CSV file",
     type=['xlsx', 'csv'],
@@ -111,7 +191,7 @@ if uploaded_file:
         show_data_quality_summary(analyzer.data)
         
         # Step 2: Domain Constraints
-        st.header("🧠 Step 2: Domain Constraints (AI-Powered)")
+        st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
         
         domain_context = st.text_area(
             "Describe your domain/business context:",
@@ -151,7 +231,7 @@ if uploaded_file:
                 st.json(st.session_state['constraints_data'])
         
         # Step 3: Causal Discovery
-        st.header("🔍 Step 3: Causal Discovery")
+        st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
         
         # Add validation for constraints
         constraints_ready = (
@@ -192,7 +272,7 @@ if uploaded_file:
                 st.dataframe(adj_df.round(3))
         
         # Step 4: Variable Relationship Analysis
-        st.header("📊 Step 4: Variable Relationship Analysis")
+        st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
         
         if st.button("🔍 Analyze Variable Relationships", type="secondary"):
             with st.spinner("Analyzing variable relationships..."):
@@ -216,7 +296,7 @@ if uploaded_file:
                             st.write("No strong correlations (>0.5) found")
         
         # Step 5: Causal Inference Analysis
-        st.header("🔬 Step 5: Causal Inference Analysis")
+        st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
         
         if analyzer.data is not None and not analyzer.data.empty:
             col1, col2, col3 = st.columns(3)
@@ -278,7 +358,7 @@ if uploaded_file:
             show_results_table(ate_results)
             
             # AI Explanation - IMPROVED INTEGRATION
-            st.header("🧠 AI-Powered Insights")
+            st.markdown('<div class="step-header"><h2>🧠 AI-Powered Insights</h2></div>', unsafe_allow_html=True)
             
             # Show button only if API key is available
             if st.session_state.get('openai_api_key'):
