@@ -34,24 +34,3 @@ git checkout main
 git merge --ff-only develop
 git push origin main
 ```
-
-## 🛠 Optional Enhancements
-Create feature branches from develop:
-
-```bash
-git checkout develop
-git checkout -b feature/my-feature
-```
-
-Use Pull Requests (PRs) if you're working in a team.
-
-Protect main with required reviews or CI checks.
-
-## ✅ Benefits
-- Keeps main always deployable
-- Clean and linear Git history with rebasing
-- Easy to manage and understand
-
-## 📌 Notes
-- Always run tests before merging to main.
-- Use --ff-only to avoid unnecessary merge commits.
