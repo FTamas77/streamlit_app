@@ -1,10 +1,10 @@
-name: Run Tests and Email Results
+﻿name: Run Tests and Email Results
 
 on:
   push:
-    branches: [ develop ]
+    branches: [ develop, main ]
   pull_request:
-    branches: [ develop ]
+    branches: [ develop, main ]
 
 jobs:
   test:
@@ -38,6 +38,12 @@ jobs:
         cat test_results.txt
       continue-on-error: true
     
+    - name: Run all integration tests
+      run: |
+        echo "Running all integration tests..." >> test_results.txt
+        pytest tests/test_*_integration.py -v --tb=short >> test_results.txt 2>&1 || true
+        echo "All integration tests completed" >> test_results.txt
+    
     - name: Validate email secrets
       run: |
         if [ -z "${{ secrets.EMAIL_USERNAME }}" ]; then
@@ -57,18 +63,19 @@ jobs:
         server_port: 587
         username: ${{ secrets.EMAIL_USERNAME }}
         password: ${{ secrets.EMAIL_APP_PASSWORD }}
-        subject: "Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
+        subject: "${{ github.ref_name == 'main' && '[MAIN BRANCH]' || '[DEVELOP BRANCH]' }} Test Results for ${{ github.repository }} - Commit ${{ github.sha }}"
         to: tfekete@prysm.solutions
         from: ${{ secrets.EMAIL_USERNAME }}
         body: |
           Test results for repository: ${{ github.repository }}
-          Branch: ${{ github.ref_name }}
+          Branch: ${{ github.ref_name }} ${{ github.ref_name == 'main' && '(PRODUCTION BRANCH )' || '(DEVELOPMENT BRANCH )' }}
           Commit: ${{ github.sha }}
           Commit message: ${{ github.event.head_commit.message }}
           
-          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
+          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ' || 'FAILED ' }}
+          
+          ${{ github.ref_name == 'main' && 'IMPORTANT: This is a main branch build. Please review any failures immediately.' || 'This is a development build. Review as needed.' }}
           
           Full test output:
           
         attachments: test_results.txt
-
