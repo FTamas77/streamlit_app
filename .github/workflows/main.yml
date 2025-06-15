@@ -1,4 +1,4 @@
-﻿name: Run Tests and Email Results
+name: Run Tests and Email Results
 
 on:
   push:
@@ -68,11 +68,11 @@ jobs:
         from: ${{ secrets.EMAIL_USERNAME }}
         body: |
           Test results for repository: ${{ github.repository }}
-          Branch: ${{ github.ref_name }} ${{ github.ref_name == 'main' && '(PRODUCTION BRANCH )' || '(DEVELOPMENT BRANCH )' }}
+          Branch: ${{ github.ref_name }} ${{ github.ref_name == 'main' && '(PRODUCTION BRANCH 🚀)' || '(DEVELOPMENT BRANCH 🔧)' }}
           Commit: ${{ github.sha }}
           Commit message: ${{ github.event.head_commit.message }}
           
-          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ' || 'FAILED ' }}
+          Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
           
           ${{ github.ref_name == 'main' && 'IMPORTANT: This is a main branch build. Please review any failures immediately.' || 'This is a development build. Review as needed.' }}
           
