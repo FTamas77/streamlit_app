@@ -211,7 +211,7 @@ with col2:
         
         if selected_sample != 'None':
             sample_file_path = os.path.join(sample_data_dir, selected_sample)
-            if st.button("� Load Sample Dataset", key="load_sample"):
+            if st.button("Load Sample Dataset", key="load_sample"):
                 try:
                     # Load the sample data
                     sample_data = pd.read_csv(sample_file_path)
