@@ -172,223 +172,311 @@ st.markdown("""
 
 # Step 1: Data Upload
 st.markdown('<div class="step-header"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
-uploaded_file = st.file_uploader(
-    "Upload your Excel or CSV file",
-    type=['xlsx', 'csv'],
-    help="Ensure your data has clean column names and numeric values."
-)
 
+# Create two columns for upload options
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.markdown("### 📤 Upload Your Own Data")
+    uploaded_file = st.file_uploader(
+        "Upload your Excel or CSV file",
+        type=['xlsx', 'csv'],
+        help="Ensure your data has clean column names and numeric values."
+    )
+
+with col2:
+    st.markdown("### 📊 Use Sample Dataset")
+    
+    # Get list of sample data files
+    sample_data_dir = os.path.join(os.path.dirname(__file__), 'sample_data')
+    sample_files = []
+    sample_descriptions = {
+        'medical_study.csv': '🏥 Medical Treatment Study (Recovery Time Analysis)',
+        'marketing_campaign.csv': '📈 Marketing ROI Analysis (Ad Spend vs Sales)',
+        'education_study.csv': '🎓 Education Study (Study Hours vs Test Scores)'
+    }
+    
+    if os.path.exists(sample_data_dir):
+        for file in os.listdir(sample_data_dir):
+            if file.endswith('.csv'):
+                sample_files.append(file)
+    
+    if sample_files:
+        selected_sample = st.selectbox(
+            "Choose a sample dataset:",
+            options=['None'] + sample_files,
+            format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
+            help="These datasets demonstrate different causal relationships and include realistic confounding factors."
+        )
+        
+        if selected_sample != 'None':
+            sample_file_path = os.path.join(sample_data_dir, selected_sample)
+            if st.button("� Load Sample Dataset", key="load_sample"):
+                try:
+                    # Load the sample data
+                    sample_data = pd.read_csv(sample_file_path)
+                    analyzer.data = sample_data
+                    
+                    # Set session state
+                    st.session_state['data_loaded'] = True
+                    st.session_state['causal_discovery_completed'] = False
+                    st.session_state['sample_data_loaded'] = selected_sample
+                    
+                    st.success(f"✅ Sample dataset '{selected_sample}' loaded successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error loading sample dataset: {str(e)}")
+    else:
+        st.info("No sample datasets found. Run `python create_sample_data.py` to generate sample datasets.")
+
+# Handle uploaded file
+data_source = None
 if uploaded_file:
     if analyzer.load_data(uploaded_file):
         # 🚦 STATE TRANSITION: Data uploaded
         st.session_state['data_loaded'] = True
         st.session_state['causal_discovery_completed'] = False
+        st.session_state.pop('sample_data_loaded', None)  # Clear sample data flag
+        data_source = f"Uploaded file: {uploaded_file.name}"
         
         st.success("✅ Data loaded successfully!")
+elif st.session_state.get('sample_data_loaded'):
+    data_source = f"Sample dataset: {st.session_state['sample_data_loaded']}"
+
+# Show data info if data is loaded
+if st.session_state.get('data_loaded') and analyzer.data is not None:
+    
+    # Show data source info
+    if data_source:
+        st.info(f"📊 **Data Source**: {data_source}")
+    
+    # Display data preview and quality summary
+    show_data_preview(analyzer.data)
+    show_data_quality_summary(analyzer.data)
+    
+    # Add sample dataset information if applicable
+    if st.session_state.get('sample_data_loaded'):
+        sample_name = st.session_state['sample_data_loaded']
         
-        # Display data preview
-        show_data_preview(analyzer.data)
-        show_data_quality_summary(analyzer.data)
+        # Show sample dataset description
+        if sample_name == 'medical_study.csv':
+            st.info("""
+            🏥 **Medical Treatment Study**: This dataset examines the effect of a medical treatment on patient recovery time. 
+            Key variables include patient age, disease severity, treatment status, and recovery days. 
+            The goal is to determine if the treatment reduces recovery time while controlling for confounding factors.
+            """)
+        elif sample_name == 'marketing_campaign.csv':
+            st.info("""
+            📈 **Marketing ROI Analysis**: This dataset analyzes the relationship between advertising spend and sales performance. 
+            Variables include monthly ad spend, market conditions, seasonality effects, and sales revenue. 
+            The goal is to measure the return on advertising investment.
+            """)
+        elif sample_name == 'education_study.csv':
+            st.info("""
+            🎓 **Education Effectiveness Study**: This dataset studies the impact of study time on student performance. 
+            Variables include student IQ, motivation level, weekly study hours, and test scores. 
+            The goal is to quantify how additional study time improves academic performance.
+            """)
+
+    # Step 2: Domain Constraints
+    st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
+    
+    domain_context = st.text_area(
+        "Describe your domain/business context:",
+        placeholder="e.g., 'This is customer behavior data where age comes before purchase decisions...'",
+        height=100
+    )
+    
+    if st.button("🤖 Generate Domain Constraints", type="secondary"):
+        if domain_context:
+            with st.spinner("AI is analyzing your domain..."):
+                constraints = generate_domain_constraints(
+                    list(analyzer.data.columns), 
+                    domain_context,
+                    st.session_state.get('openai_api_key')
+                )                
+            if constraints and constraints.get('explanation') != "No API key provided":
+                # Validate constraints for conflicts
+                from causal.discovery_constraints import validate_constraints
+                validation = validate_constraints(constraints)                    
+                if validation['conflicts']:
+                    st.warning("⚠️ Constraint conflicts detected - they will be automatically resolved")
+                    for conflict in validation['conflicts']:
+                        st.warning(f"🚨 {conflict['description']} → Required edge will take precedence")
+                    st.session_state['constraints_data'] = validation['resolved_constraints']
+                    resolved_constraints = validation['resolved_constraints']
+                else:
+                    st.success("✅ Domain constraints generated!")
+                    st.session_state['constraints_data'] = constraints
+                    resolved_constraints = constraints
+                
+                if validation['warnings']:
+                    for warning in validation['warnings']:
+                        st.info(f"💡 {warning}")
+                
+                st.session_state['domain_constraints_generated'] = True
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    display_constraints = resolved_constraints
+                    st.json(display_constraints)
+                with col2:
+                    st.info(f"**Explanation:** {constraints.get('explanation', 'No explanation provided')}")
+                
+                analyzer.domain_constraints = resolved_constraints
+            else:
+                st.error("❌ Failed to generate constraints. Check your API key.")
+        else:
+            st.warning("Please provide domain context first.")
+    
+    # Show previously generated constraints
+    if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
+        with st.expander("📋 Current Domain Constraints", expanded=False):
+            st.json(st.session_state['constraints_data'])
+    
+    # Step 3: Causal Discovery
+    st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
+    
+    # Add validation for constraints
+    constraints_ready = (
+        st.session_state.get('domain_constraints_generated') or 
+        st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints")
+    )
+    
+    if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready):
+        with st.spinner("Discovering causal relationships..."):
+            active_constraints = st.session_state.get('constraints_data', {})
+            success = analyzer.run_causal_discovery(active_constraints)
+            
+        if success:
+            st.session_state['causal_discovery_completed'] = True
+            st.success("✅ Causal discovery completed!")
+            
+            if active_constraints:
+                st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
+        else:
+            st.session_state['causal_discovery_completed'] = False
+            st.error("❌ Causal discovery failed")
+    
+    # Show causal discovery results
+    if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
+        col1, col2 = st.columns([2, 1])
         
-        # Step 2: Domain Constraints
-        st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
+        with col1:
+            st.subheader("📈 Discovered Causal Graph")
+            show_causal_graph(analyzer.adjacency_matrix, list(analyzer.data.columns))
         
-        domain_context = st.text_area(
-            "Describe your domain/business context:",
-            placeholder="e.g., 'This is customer behavior data where age comes before purchase decisions...'",
-            height=100
-        )
-        
-        if st.button("🤖 Generate Domain Constraints", type="secondary"):
-            if domain_context:
-                with st.spinner("AI is analyzing your domain..."):
-                    constraints = generate_domain_constraints(
-                        list(analyzer.data.columns), 
-                        domain_context,
-                        st.session_state.get('openai_api_key')
-                    )                
-                if constraints and constraints.get('explanation') != "No API key provided":
-                    # Validate constraints for conflicts
-                    from causal.discovery_constraints import validate_constraints
-                    validation = validate_constraints(constraints)                    
-                    if validation['conflicts']:
-                        st.warning("⚠️ Constraint conflicts detected - they will be automatically resolved")
-                        for conflict in validation['conflicts']:
-                            st.warning(f"🚨 {conflict['description']} → Required edge will take precedence")
-                        st.session_state['constraints_data'] = validation['resolved_constraints']
-                        resolved_constraints = validation['resolved_constraints']
+        with col2:
+            st.subheader("📊 Adjacency Matrix")
+            adj_df = pd.DataFrame(
+                analyzer.adjacency_matrix, 
+                index=analyzer.data.columns, 
+                columns=analyzer.data.columns
+            )
+            st.dataframe(adj_df.round(3))
+    
+    # Step 4: Variable Relationship Analysis
+    st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
+    
+    if st.button("🔍 Analyze Variable Relationships", type="secondary"):
+        with st.spinner("Analyzing variable relationships..."):
+            relationships = analyzer.analyze_variable_relationships()
+            
+            if relationships:
+                st.success("✅ Relationship analysis completed!")
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.subheader("🔥 Correlation Heatmap")
+                    show_correlation_heatmap(relationships['correlation_matrix'])
+                
+                with col2:
+                    st.subheader("💪 Strongest Correlations")
+                    strong_corr = relationships['strong_correlations']
+                    if strong_corr:
+                        for corr in strong_corr[:5]:
+                            st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
                     else:
-                        st.success("✅ Domain constraints generated!")
-                        st.session_state['constraints_data'] = constraints
-                        resolved_constraints = constraints
-                    
-                    if validation['warnings']:
-                        for warning in validation['warnings']:
-                            st.info(f"💡 {warning}")
-                    
-                    st.session_state['domain_constraints_generated'] = True
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        display_constraints = resolved_constraints
-                        st.json(display_constraints)
-                    with col2:
-                        st.info(f"**Explanation:** {constraints.get('explanation', 'No explanation provided')}")
-                    
-                    analyzer.domain_constraints = resolved_constraints
-                else:
-                    st.error("❌ Failed to generate constraints. Check your API key.")
+                        st.write("No strong correlations (>0.5) found")
+    
+    # Step 5: Causal Inference Analysis
+    st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
+    
+    if analyzer.data is not None and not analyzer.data.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            treatment_var = st.selectbox(
+                "Treatment Variable (Cause)",
+                options=list(analyzer.data.columns),
+                key="treatment_select"
+            )
+        
+        with col2:
+            outcome_var = st.selectbox(
+                "Outcome Variable (Effect)", 
+                options=[col for col in analyzer.data.columns if col != treatment_var],
+                key="outcome_select"
+            )
+        
+        with col3:
+            confounders = st.multiselect(
+                "Confounding Variables",
+                options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
+                key="confounders_select"
+            )
+        
+        if st.button("🔬 Run Causal Inference", type="primary"):
+            if treatment_var != outcome_var:
+                with st.spinner("Running causal inference..."):
+                    ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
+                    st.session_state['ate_results'] = ate_results
+                    st.session_state['selected_treatment'] = treatment_var
+                    st.session_state['selected_outcome'] = outcome_var
             else:
-                st.warning("Please provide domain context first.")
+                st.error("❌ Please select different variables for treatment and outcome")
+    
+    # Display results
+    if st.session_state.get('ate_results'):
+        ate_results = st.session_state['ate_results']
+        treatment_var = st.session_state['selected_treatment']
+        outcome_var = st.session_state['selected_outcome']
         
-        # Show previously generated constraints
-        if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
-            with st.expander("📋 Current Domain Constraints", expanded=False):
-                st.json(st.session_state['constraints_data'])
+        st.success("✅ Causal inference completed!")
         
-        # Step 3: Causal Discovery
-        st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
+        # Main result
+        st.subheader("📊 Main Result")
+        col1, col2 = st.columns([1, 2])
         
-        # Add validation for constraints
-        constraints_ready = (
-            st.session_state.get('domain_constraints_generated') or 
-            st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints")
-        )
+        with col1:
+            st.metric(
+                "Causal Effect Estimate", 
+                f"{ate_results['consensus_estimate']:.4f}"
+            )
         
-        if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready):
-            with st.spinner("Discovering causal relationships..."):
-                active_constraints = st.session_state.get('constraints_data', {})
-                success = analyzer.run_causal_discovery(active_constraints)
+        with col2:
+            st.info(f"**Interpretation:** {ate_results['interpretation']}")
+        
+        # Detailed results
+        st.subheader("🔍 Detailed Results by Method")
+        show_results_table(ate_results)
+        
+        # AI Explanation - IMPROVED INTEGRATION
+        st.markdown('<div class="step-header"><h2>🧠 AI-Powered Insights</h2></div>', unsafe_allow_html=True)
+        
+        # Show button only if API key is available
+        if st.session_state.get('openai_api_key'):
+            if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
+                with st.spinner("AI is analyzing your results..."):
+                    explanation = explain_results_with_llm(
+                        ate_results, treatment_var, outcome_var,
+                        st.session_state.get('openai_api_key')
+                    )
                 
-            if success:
-                st.session_state['causal_discovery_completed'] = True
-                st.success("✅ Causal discovery completed!")
-                
-                if active_constraints:
-                    st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
-            else:
-                st.session_state['causal_discovery_completed'] = False
-                st.error("❌ Causal discovery failed")
-        
-        # Show causal discovery results
-        if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.subheader("📈 Discovered Causal Graph")
-                show_causal_graph(analyzer.adjacency_matrix, list(analyzer.data.columns))
-            
-            with col2:
-                st.subheader("📊 Adjacency Matrix")
-                adj_df = pd.DataFrame(
-                    analyzer.adjacency_matrix, 
-                    index=analyzer.data.columns, 
-                    columns=analyzer.data.columns
-                )
-                st.dataframe(adj_df.round(3))
-        
-        # Step 4: Variable Relationship Analysis
-        st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
-        
-        if st.button("🔍 Analyze Variable Relationships", type="secondary"):
-            with st.spinner("Analyzing variable relationships..."):
-                relationships = analyzer.analyze_variable_relationships()
-                
-                if relationships:
-                    st.success("✅ Relationship analysis completed!")
-                    
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        st.subheader("🔥 Correlation Heatmap")
-                        show_correlation_heatmap(relationships['correlation_matrix'])
-                    
-                    with col2:
-                        st.subheader("💪 Strongest Correlations")
-                        strong_corr = relationships['strong_correlations']
-                        if strong_corr:
-                            for corr in strong_corr[:5]:
-                                st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
-                        else:
-                            st.write("No strong correlations (>0.5) found")
-        
-        # Step 5: Causal Inference Analysis
-        st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
-        
-        if analyzer.data is not None and not analyzer.data.empty:
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                treatment_var = st.selectbox(
-                    "Treatment Variable (Cause)",
-                    options=list(analyzer.data.columns),
-                    key="treatment_select"
-                )
-            
-            with col2:
-                outcome_var = st.selectbox(
-                    "Outcome Variable (Effect)", 
-                    options=[col for col in analyzer.data.columns if col != treatment_var],
-                    key="outcome_select"
-                )
-            
-            with col3:
-                confounders = st.multiselect(
-                    "Confounding Variables",
-                    options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
-                    key="confounders_select"
-                )
-            
-            if st.button("🔬 Run Causal Inference", type="primary"):
-                if treatment_var != outcome_var:
-                    with st.spinner("Running causal inference..."):
-                        ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
-                        st.session_state['ate_results'] = ate_results
-                        st.session_state['selected_treatment'] = treatment_var
-                        st.session_state['selected_outcome'] = outcome_var
-                else:
-                    st.error("❌ Please select different variables for treatment and outcome")
-        
-        # Display results
-        if st.session_state.get('ate_results'):
-            ate_results = st.session_state['ate_results']
-            treatment_var = st.session_state['selected_treatment']
-            outcome_var = st.session_state['selected_outcome']
-            
-            st.success("✅ Causal inference completed!")
-            
-            # Main result
-            st.subheader("📊 Main Result")
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                st.metric(
-                    "Causal Effect Estimate", 
-                    f"{ate_results['consensus_estimate']:.4f}"
-                )
-            
-            with col2:
-                st.info(f"**Interpretation:** {ate_results['interpretation']}")
-            
-            # Detailed results
-            st.subheader("🔍 Detailed Results by Method")
-            show_results_table(ate_results)
-            
-            # AI Explanation - IMPROVED INTEGRATION
-            st.markdown('<div class="step-header"><h2>🧠 AI-Powered Insights</h2></div>', unsafe_allow_html=True)
-            
-            # Show button only if API key is available
-            if st.session_state.get('openai_api_key'):
-                if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
-                    with st.spinner("AI is analyzing your results..."):
-                        explanation = explain_results_with_llm(
-                            ate_results, treatment_var, outcome_var,
-                            st.session_state.get('openai_api_key')
-                        )
-                    
-                    st.markdown("### 📋 Business Insights & Recommendations")
-                    st.markdown(explanation)
-            else:
-                st.warning("🔑 Add OpenAI API key in sidebar to get AI-powered explanations")
+                st.markdown("### 📋 Business Insights & Recommendations")
+                st.markdown(explanation)
+        else:
+            st.warning("🔑 Add OpenAI API key in sidebar to get AI-powered explanations")
 
 else:
     # Landing page when no file is uploaded

@@ -149,7 +149,7 @@ ehthumbs.db
 Thumbs.db
 
 # Data files (you might want to keep some)
-*.csv
+#*.csv
 *.xlsx
 *.json
 *.pickle
