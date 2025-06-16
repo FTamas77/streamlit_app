@@ -19,13 +19,10 @@ def create_prior_knowledge_matrix(constraints: Dict, columns: List[str]) -> Opti
     
     Args:
         constraints: Dictionary with constraint types:
-            - 'sink_variables': List of variable names that should be sinks (no outgoing edges)
-            - 'exogenous_variables': List of variable names that should be exogenous (no incoming edges)
             - 'forbidden_edges': List of [source, target] pairs that should be forbidden
             - 'required_edges': List of [source, target] pairs that should be required
         columns: List of column names in the dataset
-    
-    Returns:
+      Returns:
         Prior knowledge matrix or None if LiNGAM utils not available
     """
     if not LINGAM_UTILS_AVAILABLE:
@@ -33,50 +30,8 @@ def create_prior_knowledge_matrix(constraints: Dict, columns: List[str]) -> Opti
         return None
     
     n_variables = len(columns)
-    col_to_idx = {col: idx for idx, col in enumerate(columns)}
-    
-    # Convert variable names to indices
-    sink_indices = []
-    if 'sink_variables' in constraints:
-        sink_indices = [col_to_idx[var] for var in constraints['sink_variables'] if var in col_to_idx]
-    
-    exogenous_indices = []
-    if 'exogenous_variables' in constraints:
-        exogenous_indices = [col_to_idx[var] for var in constraints['exogenous_variables'] if var in col_to_idx]
-    
-    # Create basic prior knowledge matrix using LiNGAM's utility
-    prior_knowledge = None
-    
-    if sink_indices:
-        prior_knowledge = make_prior_knowledge(
-            n_variables=n_variables,
-            sink_variables=sink_indices
-        )
-        print(f"DEBUG: Created prior knowledge with sink variables: {[columns[i] for i in sink_indices]}")
-    
-    if exogenous_indices:
-        if prior_knowledge is None:
-            prior_knowledge = make_prior_knowledge(
-                n_variables=n_variables,
-                exogenous_variables=exogenous_indices
-            )
-        else:
-            # Combine with existing prior knowledge
-            exogenous_pk = make_prior_knowledge(
-                n_variables=n_variables,
-                exogenous_variables=exogenous_indices
-            )
-            # Take the more restrictive constraint (0 overrides -1)
-            prior_knowledge = np.where(
-                (prior_knowledge == -1) & (exogenous_pk != -1),
-                exogenous_pk,
-                prior_knowledge
-            )
-        print(f"DEBUG: Added exogenous variables: {[columns[i] for i in exogenous_indices]}")
-    
-    # If no sink/exogenous variables specified, start with no prior knowledge
-    if prior_knowledge is None:
-        prior_knowledge = make_prior_knowledge(n_variables=n_variables)
+    col_to_idx = {col: idx for idx, col in enumerate(columns)}    # Start with no prior knowledge (all -1)
+    prior_knowledge = make_prior_knowledge(n_variables=n_variables)
     
     # Add forbidden edges (set to 0: no directed path)
     if 'forbidden_edges' in constraints:
@@ -108,3 +63,63 @@ def convert_edge_constraints(edge_list: List[List[str]], columns) -> Optional[np
         'forbidden_edges': edge_list
     }
     return create_prior_knowledge_matrix(constraints, columns)
+
+def validate_constraints(constraints: Dict) -> Dict:
+    """
+    Validate and report potential issues in LLM-generated constraints.
+    
+    Returns:
+        Dict with validation results:
+        - 'valid': bool
+        - 'conflicts': List of conflict descriptions  
+        - 'warnings': List of warning messages
+        - 'resolved_constraints': Dict with conflicts resolved
+    """
+    conflicts = []
+    warnings = []
+    
+    forbidden_edges = set()
+    required_edges = set()
+    
+    # Extract edges
+    if 'forbidden_edges' in constraints:
+        forbidden_edges = {tuple(edge) for edge in constraints['forbidden_edges']}
+    
+    if 'required_edges' in constraints:
+        required_edges = {tuple(edge) for edge in constraints['required_edges']}
+    
+    # Check for direct conflicts (same edge forbidden and required)
+    conflicting_edges = forbidden_edges.intersection(required_edges)
+    
+    for edge in conflicting_edges:
+        conflicts.append({
+            'type': 'direct_conflict',
+            'edge': list(edge),
+            'description': f"Edge {edge[0]} -> {edge[1]} is both forbidden and required"
+        })
+    
+    # Check for potential cycles in required edges
+    required_graph = {}
+    for source, target in required_edges:
+        if source not in required_graph:
+            required_graph[source] = []
+        required_graph[source].append(target)
+    
+    # Simple cycle detection (could be more sophisticated)
+    if len(required_edges) >= 3:
+        warnings.append("Multiple required edges detected - check for potential cycles")
+    
+    # Create resolved constraints (required edges win)
+    resolved_constraints = constraints.copy()
+    if conflicts:
+        # Remove conflicting forbidden edges
+        resolved_forbidden = [edge for edge in constraints.get('forbidden_edges', []) 
+                             if tuple(edge) not in conflicting_edges]
+        resolved_constraints['forbidden_edges'] = resolved_forbidden
+    
+    return {
+        'valid': len(conflicts) == 0,
+        'conflicts': conflicts,
+        'warnings': warnings,
+        'resolved_constraints': resolved_constraints
+    }

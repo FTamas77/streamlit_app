@@ -206,20 +206,36 @@ if uploaded_file:
                         list(analyzer.data.columns), 
                         domain_context,
                         st.session_state.get('openai_api_key')
-                    )
-                
+                    )                
                 if constraints and constraints.get('explanation') != "No API key provided":
-                    st.success("✅ Domain constraints generated!")
-                    st.session_state['constraints_data'] = constraints
+                    # Validate constraints for conflicts
+                    from causal.discovery_constraints import validate_constraints
+                    validation = validate_constraints(constraints)                    
+                    if validation['conflicts']:
+                        st.warning("⚠️ Constraint conflicts detected - they will be automatically resolved")
+                        for conflict in validation['conflicts']:
+                            st.warning(f"🚨 {conflict['description']} → Required edge will take precedence")
+                        st.session_state['constraints_data'] = validation['resolved_constraints']
+                        resolved_constraints = validation['resolved_constraints']
+                    else:
+                        st.success("✅ Domain constraints generated!")
+                        st.session_state['constraints_data'] = constraints
+                        resolved_constraints = constraints
+                    
+                    if validation['warnings']:
+                        for warning in validation['warnings']:
+                            st.info(f"💡 {warning}")
+                    
                     st.session_state['domain_constraints_generated'] = True
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.json(constraints)
+                        display_constraints = resolved_constraints
+                        st.json(display_constraints)
                     with col2:
                         st.info(f"**Explanation:** {constraints.get('explanation', 'No explanation provided')}")
                     
-                    analyzer.domain_constraints = constraints
+                    analyzer.domain_constraints = resolved_constraints
                 else:
                     st.error("❌ Failed to generate constraints. Check your API key.")
             else:

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-LLM Integration tests with focus on constraint structure alignment.
-Tests that LLM-generated constraints work seamlessly with causal discovery.
-Supports both pytest and manual execution.
-"""
 
 import sys
 import os
@@ -55,7 +50,7 @@ def validate_constraint_structure(constraints):
         assert isinstance(edge[1], str), f"Target must be string, got {type(edge[1])}"
     
     # Optional: Check for additional constraint types that causal discovery supports
-    optional_keys = ['sink_variables', 'exogenous_variables']
+    optional_keys = []  # No optional keys needed - we only use forbidden_edges and required_edges
     for key in optional_keys:
         if key in constraints:
             assert isinstance(constraints[key], list), f"{key} must be list if present"
@@ -236,14 +231,14 @@ def test_llm_explanation_quality():
     # Should include business terms
     business_terms = ['effect', 'impact', 'increase', 'significant', 'confidence']
     found_terms = [term for term in business_terms if term in explanation_lower]
-    assert len(found_terms) >= 2, f"Should include business terms, found: {found_terms}"
-    
+    assert len(found_terms) >= 2, f"Should include business terms, found: {found_terms}"    
     # Should mention the magnitude
     assert '0.15' in explanation or '15%' in explanation or 'fifteen' in explanation.lower(), \
         "Should mention the effect magnitude"
     
     print("✅ Explanation quality test passed")
 
+@pytest.mark.integration
 def test_constraint_compatibility_with_discovery():
     """
     Test that LLM-generated constraints can be used directly with causal discovery.
@@ -254,13 +249,10 @@ def test_constraint_compatibility_with_discovery():
     # Import causal discovery to test integration
     from causal.discovery_constraints import create_prior_knowledge_matrix
     import numpy as np
-    
-    # Test constraint structure that matches both LLM output and discovery input
+      # Test constraint structure that matches both LLM output and discovery input
     test_constraints = {
         "forbidden_edges": [["C", "A"], ["C", "B"]],
-        "required_edges": [["A", "B"]],
-        "sink_variables": ["C"],
-        "exogenous_variables": ["A"]
+        "required_edges": [["A", "B"]]
     }
     
     columns = ["A", "B", "C"]
@@ -274,22 +266,72 @@ def test_constraint_compatibility_with_discovery():
     # Validate the prior knowledge matrix was created
     assert prior_knowledge is not None, "Should create prior knowledge matrix"
     assert isinstance(prior_knowledge, np.ndarray), "Should return numpy array"
-    assert prior_knowledge.shape == (3, 3), f"Should be 3x3 matrix, got {prior_knowledge.shape}"
-    
+    assert prior_knowledge.shape == (3, 3), f"Should be 3x3 matrix, got {prior_knowledge.shape}"    
     print(f"📋 Generated prior knowledge matrix:\n{prior_knowledge}")
     
-    # Validate constraint application
-    # A should be exogenous (no incoming edges: column 0 should have zeros)
-    assert np.all(prior_knowledge[:, 0] <= 0), "A should be exogenous (no incoming edges allowed)"
-    
-    # C should be sink (no outgoing edges: row 2 should be non-positive)  
-    assert np.all(prior_knowledge[2, :] <= 0), "C should be sink (no outgoing edges allowed)"
-    
-    # C -> A and C -> B should be forbidden (set to 0)
-    assert prior_knowledge[0, 2] == 0, "C -> A should be forbidden"
-    assert prior_knowledge[1, 2] == 0, "C -> B should be forbidden"
+    # Validate constraint application - only check what we actually constrained
+    # C -> A should be forbidden (C=index 2, A=index 0)
+    assert prior_knowledge[2, 0] == 0, "C -> A should be forbidden"    # C -> B should be forbidden (C=index 2, B=index 1)  
+    assert prior_knowledge[2, 1] == 0, "C -> B should be forbidden"
+    # A -> B should be required (A=index 0, B=index 1)
+    assert prior_knowledge[0, 1] == 1, "A -> B should be required"
     
     print("✅ Constraint compatibility test passed")
+
+@pytest.mark.integration
+def test_constraint_conflict_resolution():
+    """Test that conflicting constraints are properly detected and resolved"""
+    print("\n" + "="*50)
+    print("🚨 Testing Constraint Conflict Resolution")
+    
+    from causal.discovery_constraints import validate_constraints, create_prior_knowledge_matrix
+    import numpy as np
+    
+    # Create conflicting constraints
+    conflicting_constraints = {
+        "forbidden_edges": [["A", "B"], ["C", "A"]],  # A -> B forbidden
+        "required_edges": [["A", "B"], ["B", "C"]]   # A -> B required (CONFLICT!)
+    }
+    
+    columns = ["A", "B", "C"]
+    
+    print(f"🔗 Testing conflicting constraints: {conflicting_constraints}")
+    
+    # Step 1: Validate and resolve conflicts
+    validation = validate_constraints(conflicting_constraints)
+    
+    # Should detect the conflict
+    assert not validation['valid'], "Should detect conflicts"
+    assert len(validation['conflicts']) == 1, "Should detect one conflict"
+    assert validation['conflicts'][0]['edge'] == ['A', 'B'], "Should identify A->B conflict"
+    
+    # Should provide resolved constraints
+    resolved_constraints = validation['resolved_constraints']
+    print(f"📋 Resolved constraints: {resolved_constraints}")
+    
+    # A -> B should be removed from forbidden edges
+    assert ['A', 'B'] not in resolved_constraints.get('forbidden_edges', []), "Conflicting forbidden edge should be removed"
+    # A -> B should still be in required edges
+    assert ['A', 'B'] in resolved_constraints.get('required_edges', []), "Required edge should remain"
+    # C -> A should still be forbidden (no conflict)
+    assert ['C', 'A'] in resolved_constraints.get('forbidden_edges', []), "Non-conflicting forbidden edge should remain"
+    
+    # Step 2: Create prior knowledge matrix with resolved constraints
+    prior_knowledge = create_prior_knowledge_matrix(resolved_constraints, columns)
+    
+    # Validate the matrix reflects resolved constraints
+    assert prior_knowledge is not None, "Should create prior knowledge matrix with resolved constraints"
+    
+    # A -> B should be required (required wins over forbidden)
+    assert prior_knowledge[0, 1] == 1, "Required edge should be present in matrix"
+    
+    # C -> A should still be forbidden (no conflict)
+    assert prior_knowledge[2, 0] == 0, "Non-conflicting forbidden edge should remain in matrix"
+    
+    # B -> C should be required (no conflict)  
+    assert prior_knowledge[1, 2] == 1, "Non-conflicting required edge should work"
+    
+    print("✅ Conflict resolution test passed - full workflow from validation to matrix creation")
 
 if __name__ == "__main__":
     """Manual execution for debugging LLM integration."""
@@ -303,6 +345,7 @@ if __name__ == "__main__":
         ("Constraint Edge Cases", test_constraint_edge_cases), 
         ("LLM Explanation Quality", test_llm_explanation_quality),
         ("Constraint-Discovery Compatibility", test_constraint_compatibility_with_discovery),
+        ("Constraint Conflict Resolution", test_constraint_conflict_resolution),
     ]
     
     passed = 0

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Clean integration tests for causal discovery.
-Supports both pytest and manual execution.
-"""
 
 import sys
 import os
@@ -78,13 +74,10 @@ def test_causal_discovery_with_constraints():
     })
     
     print(f"📊 Created constrained test data with shape: {data.shape}")
-    
-    # Define constraints in LLM-aligned structure
+      # Define constraints in LLM-aligned structure
     constraints = {
         "forbidden_edges": [["C", "A"], ["C", "B"]],  # C cannot cause A or B
-        "required_edges": [],
-        "sink_variables": ["C"],  # C should be a sink (no outgoing edges)
-        "exogenous_variables": ["A"]  # A should be exogenous (no incoming edges)
+        "required_edges": []
     }
     
     print(f"🚫 Using constraints: {constraints}")

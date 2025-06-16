@@ -14,6 +14,13 @@ A Streamlit-based application for causal discovery and causal inference analysis
 - [x] Check **DirectLiNGAM constraints** implementation and validation
 - [x] Check how **DoWhy** uses confounder variables and the graph, and how we pass them
   - Right now, we can run causal inference without the step of causal discovery (causal graph) and also we can skip passing confounders to DoWhy
+- [ ] **Manual Constraint Editing Interface**
+  - Implement interactive constraint editor allowing operators to review and modify AI-generated constraints before causal discovery
+  - Support fully manual constraint specification when AI assistance is not used or unavailable
+  - Provide validation and conflict resolution for user-defined constraints
+- [ ] **Algorithm Selection Interface**
+  - Implement user interface for configuring and selecting causal discovery algorithms and estimation methods
+  - Support for multiple algorithm selection and ensemble approaches in future iterations
 - [ ] Use **2 different causal discovery algorithms** and find a way to merge them together
   - **Idea:** Take edges from both graphs except forbidden edges. This ensures we don't use edges that make no sense based on domain knowledge, but stay open for new ideas.
   - **Rationale:** Currently we select treatment and outcome, and more edges can be beneficial because we control for confounders anyway.
