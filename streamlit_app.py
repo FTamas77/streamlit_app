@@ -18,7 +18,7 @@ sys.path.append(os.path.dirname(__file__))
 
 from causal.analyzer import CausalAnalyzer
 from llm.llm import generate_domain_constraints, explain_results_with_llm
-from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table
+from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table, show_interactive_scenario_explorer
 
 # Comprehensive warning suppression
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -443,8 +443,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         outcome_var = st.session_state['selected_outcome']
         
         st.success("✅ Causal inference completed!")
-        
-        # Main result
+          # Main result
         st.subheader("📊 Main Result")
         col1, col2 = st.columns([1, 2])
         
@@ -459,7 +458,9 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         
         # Detailed results
         st.subheader("🔍 Detailed Results by Method")
-        show_results_table(ate_results)
+        show_results_table(ate_results)        # Interactive Policy Scenarios
+        st.markdown('<div class="step-header"><h2>🎮 Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)
+        show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, analyzer)
         
         # AI Explanation - IMPROVED INTEGRATION
         st.markdown('<div class="step-header"><h2>🧠 AI-Powered Insights</h2></div>', unsafe_allow_html=True)

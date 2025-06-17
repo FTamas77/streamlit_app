@@ -185,3 +185,146 @@ def show_results_table(ate_results):
         })
     
     st.dataframe(pd.DataFrame(results_df), use_container_width=True)
+
+        
+def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, analyzer):
+    """Interactive scenario explorer with real-time visual feedback
+    
+    Parameters:
+    - ate_results (Dict): ATE calculation results
+    - treatment_var (str): Name of treatment variable  
+    - outcome_var (str): Name of outcome variable
+    - analyzer: CausalAnalyzer instance for recalculating scenarios
+    """
+    st.markdown("### 🎮 Interactive Scenario Explorer")
+    st.write("**Adjust the sliders below to explore different policy scenarios and see the impact in real-time:**")
+    
+    # Get current state
+    current_treatment_mean = analyzer.data[treatment_var].mean()
+    current_outcome_mean = analyzer.data[outcome_var].mean()
+    ate_estimate = ate_results['consensus_estimate']
+    
+    # Create two columns for scenario controls
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📈 Scenario 1: Increase Treatment")
+        if analyzer.data[treatment_var].dtype in ['int64', 'bool']:
+            # For binary treatment, show percentage of population treated
+            increase_pct = st.slider(
+                "Percentage of population to receive treatment",
+                min_value=0.0, max_value=100.0, 
+                value=100.0, step=5.0,
+                key="increase_slider"
+            ) / 100.0
+            scenario1_treatment = increase_pct
+            scenario1_label = f"{increase_pct*100:.0f}% treated"
+        else:
+            # For continuous treatment, show percentage increase
+            increase_pct = st.slider(
+                "Increase treatment by (%)",
+                min_value=0, max_value=200, 
+                value=50, step=10,
+                key="increase_slider"
+            )
+            scenario1_treatment = current_treatment_mean * (1 + increase_pct/100)
+            scenario1_label = f"+{increase_pct}% increase"
+        
+        scenario1_outcome = current_outcome_mean + ate_estimate * (scenario1_treatment - current_treatment_mean)
+        scenario1_change = scenario1_outcome - current_outcome_mean
+        
+        # Display scenario 1 results
+        st.metric(
+            label=f"{treatment_var} (Scenario 1)",
+            value=f"{scenario1_treatment:.3f}",
+            delta=f"{scenario1_treatment - current_treatment_mean:+.3f}"
+        )
+        st.metric(
+            label=f"{outcome_var} (Scenario 1)", 
+            value=f"{scenario1_outcome:.3f}",
+            delta=f"{scenario1_change:+.3f}"
+        )
+    
+    with col2:
+        st.markdown("#### 📉 Scenario 2: Decrease Treatment")
+        if analyzer.data[treatment_var].dtype in ['int64', 'bool']:
+            # For binary treatment, show percentage of population treated
+            decrease_pct = st.slider(
+                "Percentage of population to receive treatment ",
+                min_value=0.0, max_value=100.0, 
+                value=0.0, step=5.0,
+                key="decrease_slider"
+            ) / 100.0
+            scenario2_treatment = decrease_pct
+            scenario2_label = f"{decrease_pct*100:.0f}% treated"
+        else:
+            # For continuous treatment, show percentage decrease
+            decrease_pct = st.slider(
+                "Decrease treatment by (%)",
+                min_value=0, max_value=100, 
+                value=25, step=5,
+                key="decrease_slider"
+            )
+            scenario2_treatment = current_treatment_mean * (1 - decrease_pct/100)
+            scenario2_label = f"-{decrease_pct}% decrease"
+        
+        scenario2_outcome = current_outcome_mean + ate_estimate * (scenario2_treatment - current_treatment_mean)
+        scenario2_change = scenario2_outcome - current_outcome_mean
+        
+        # Display scenario 2 results
+        st.metric(
+            label=f"{treatment_var} (Scenario 2)",
+            value=f"{scenario2_treatment:.3f}",
+            delta=f"{scenario2_treatment - current_treatment_mean:+.3f}"
+        )
+        st.metric(
+            label=f"{outcome_var} (Scenario 2)",
+            value=f"{scenario2_outcome:.3f}",
+            delta=f"{scenario2_change:+.3f}"
+        )
+    
+    # Visualization
+    st.markdown("#### 📊 Visual Comparison")
+    
+    # Create comparison chart
+    comparison_data = pd.DataFrame({
+        'Scenario': ['Current State', scenario1_label, scenario2_label],
+        treatment_var: [current_treatment_mean, scenario1_treatment, scenario2_treatment],
+        outcome_var: [current_outcome_mean, scenario1_outcome, scenario2_outcome],
+        'Change in Outcome': [0, scenario1_change, scenario2_change]
+    })
+    
+    # Create bar chart showing outcome changes
+    fig = px.bar(
+        comparison_data, 
+        x='Scenario', 
+        y='Change in Outcome',
+        color='Change in Outcome',
+        color_continuous_scale='RdYlBu_r',
+        title=f"Impact on {outcome_var} by Scenario",
+        labels={'Change in Outcome': f'Change in {outcome_var}'}
+    )
+    fig.update_layout(showlegend=False, height=400)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Summary table
+    st.markdown("#### 📋 Scenario Summary")
+    summary_df = comparison_data.copy()
+    for col in [treatment_var, outcome_var, 'Change in Outcome']:
+        if col in summary_df.columns:
+            summary_df[col] = summary_df[col].round(3)
+    st.dataframe(summary_df, use_container_width=True)
+    
+    # Business insights
+    st.markdown("#### 💡 Key Insights")
+    if abs(scenario1_change) > abs(scenario2_change):
+        better_scenario = "Scenario 1" if scenario1_change > scenario2_change else "Scenario 2" 
+        worse_scenario = "Scenario 2" if scenario1_change > scenario2_change else "Scenario 1"
+        st.success(f"**{better_scenario}** shows the largest positive impact on {outcome_var}")
+    
+    if ate_estimate > 0:
+        st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} > 0, increasing {treatment_var} generally improves {outcome_var}")
+    elif ate_estimate < 0:
+        st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} < 0, decreasing {treatment_var} generally improves {outcome_var}")
+    else:
+        st.warning(f"⚠️ **Interpretation:** ATE ≈ 0 suggests {treatment_var} has minimal impact on {outcome_var}")

@@ -30,19 +30,12 @@ jobs:
       run: |
         echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
     
-    - name: Run pytest
+    - name: Run all tests (tests/ folder + root-level)
       id: pytest
       run: |
-        pytest --tb=short --cov=. --cov-report=term-missing > test_results.txt 2>&1
+        pytest tests/ test_interactive_features.py test_end_to_end.py --tb=short --cov=. --cov-report=term-missing > test_results.txt 2>&1
         echo "exit_code=$?" >> $GITHUB_OUTPUT
-        cat test_results.txt
-      continue-on-error: true
-    
-    - name: Run all integration tests
-      run: |
-        echo "Running all integration tests..." >> test_results.txt
-        pytest tests/test_*_integration.py -v --tb=short >> test_results.txt 2>&1 || true
-        echo "All integration tests completed" >> test_results.txt
+        cat test_results.txt      continue-on-error: true
     
     - name: Validate email secrets
       run: |
@@ -74,8 +67,9 @@ jobs:
           
           Test Status: ${{ steps.pytest.outputs.exit_code == '0' && 'PASSED ✅' || 'FAILED ❌' }}
           
-          ${{ github.ref_name == 'main' && 'IMPORTANT: This is a main branch build. Please review any failures immediately.' || 'This is a development build. Review as needed.' }}
+          Test Coverage: All files in tests/ folder + root-level test_*.py files
           
-          Full test output:
+          ${{ github.ref_name == 'main' && 'IMPORTANT: This is a main branch build. Please review any failures immediately.' || 'This is a development build. Review as needed.' }}
+            Full test output:
           
         attachments: test_results.txt

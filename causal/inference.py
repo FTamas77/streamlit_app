@@ -169,12 +169,9 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
                 p_value = None
         except Exception as e:
             p_value = None
-        
-        # Package results
+          # Package results
         results = {
-            "Linear Regression": {
-                "estimate": causal_estimate.value,
-                "confidence_interval": confidence_interval,
+            "Linear Regression": {                "estimate": causal_estimate.value,                "confidence_interval": confidence_interval,
                 "p_value": p_value,
                 "method": "backdoor.linear_regression"
             }
