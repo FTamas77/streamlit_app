@@ -150,7 +150,7 @@ with st.sidebar:
 
 # Sidebar: Core Methodology
 with st.sidebar:
-    st.markdown("### � **Core Methodology**")
+    st.markdown("### **Core Methodology**")
     st.markdown("""
     **Primary Components:**
     
