@@ -18,8 +18,7 @@ class CausalDiscovery:
         self.model = None
         self.adjacency_matrix = None
         self.original_columns = None  # All columns from original data
-        self.numeric_columns = None   # Only numeric columns used in discovery
-        self.categorical_columns = None  # Categorical columns excluded from discovery
+        self.numeric_columns = None   # Only numeric columns used in discovery        self.categorical_columns = None  # Categorical columns excluded from discovery
     
     def run_discovery(self, data: pd.DataFrame, constraints: Dict = None):
         """Run causal discovery with domain constraints"""
@@ -33,35 +32,37 @@ class CausalDiscovery:
                 print(f"DEBUG: Running DirectLiNGAM on data shape: {data.shape}")
                 print(f"DEBUG: Data columns: {list(data.columns)}")
                 
-                # Filter to numeric columns only - DirectLiNGAM can't handle categorical data
-                numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-                categorical_columns = data.select_dtypes(exclude=[np.number]).columns.tolist()
+                # Create encoded dataset for causal discovery
+                encoded_data, column_mapping = self._encode_data_for_causal_discovery(data)
                 
-                print(f"DEBUG: Numeric columns ({len(numeric_columns)}): {numeric_columns}")
-                print(f"DEBUG: Categorical columns ({len(categorical_columns)}) excluded: {categorical_columns}")
+                print(f"DEBUG: Encoded data shape: {encoded_data.shape}")
+                print(f"DEBUG: Encoded columns: {list(encoded_data.columns)}")
+                print(f"DEBUG: Column mapping: {column_mapping}")
                 
-                if len(numeric_columns) < 2:
-                    print("ERROR: Need at least 2 numeric columns for causal discovery")
-                    return False
-                
-                # Use only numeric data for DirectLiNGAM
-                numeric_data = data[numeric_columns].copy()
-                
-                # Store original column mapping for later use
+                if encoded_data.shape[1] < 2:
+                    print("ERROR: Need at least 2 columns for causal discovery after encoding")
+                    return False                
+                # Store column information for later use
                 self.original_columns = list(data.columns)
-                self.numeric_columns = numeric_columns
-                self.categorical_columns = categorical_columns
+                self.encoded_columns = list(encoded_data.columns)
+                self.column_mapping = column_mapping
                 
-                print(f"DEBUG: Using numeric data shape: {numeric_data.shape}")
+                # Separate numeric and categorical from original data for display purposes
+                original_numeric = data.select_dtypes(include=[np.number]).columns.tolist()
+                original_categorical = data.select_dtypes(exclude=[np.number]).columns.tolist()
+                self.numeric_columns = original_numeric
+                self.categorical_columns = original_categorical
+                
+                print(f"DEBUG: Using encoded data shape: {encoded_data.shape}")
                 
                 if constraints:
                     from causal.discovery_constraints import create_prior_knowledge_matrix
                     
-                    # Filter constraints to only include numeric columns
-                    filtered_constraints = self._filter_constraints_for_numeric_columns(constraints, numeric_columns)
+                    # Filter constraints to work with encoded columns
+                    filtered_constraints = self._filter_constraints_for_encoded_columns(constraints, self.encoded_columns)
                     
                     # Use proper DirectLiNGAM prior knowledge matrix
-                    prior_knowledge = create_prior_knowledge_matrix(filtered_constraints, numeric_columns)
+                    prior_knowledge = create_prior_knowledge_matrix(filtered_constraints, self.encoded_columns)
                     if prior_knowledge is not None:
                         print(f"DEBUG: Using filtered prior knowledge matrix for numeric columns")
                         self.model = DirectLiNGAM(prior_knowledge=prior_knowledge)
@@ -70,9 +71,8 @@ class CausalDiscovery:
                         self.model = DirectLiNGAM()
                 else:
                     print("DEBUG: Running DirectLiNGAM without constraints")
-                    self.model = DirectLiNGAM()
-                
-                self.model.fit(numeric_data)
+                    self.model = DirectLiNGAM()                
+                self.model.fit(encoded_data)
                 self.adjacency_matrix = self.model.adjacency_matrix_
                 
                 print(f"DEBUG: DirectLiNGAM produced adjacency matrix shape: {self.adjacency_matrix.shape}")
@@ -85,15 +85,14 @@ class CausalDiscovery:
                 # Check causal order
                 if hasattr(self.model, 'causal_order_'):
                     print(f"DEBUG: Causal order: {self.model.causal_order_}")
-                    causal_order_vars = [numeric_columns[i] for i in self.model.causal_order_]
+                    causal_order_vars = [self.encoded_columns[i] for i in self.model.causal_order_]
                     print(f"DEBUG: Causal order variables: {causal_order_vars}")
                 
                 # Count non-zero edges
                 non_zero_edges = np.count_nonzero(np.abs(self.adjacency_matrix) > 0.01)
-                print(f"DEBUG: Number of edges with |weight| > 0.01: {non_zero_edges}")
-                  # Enforce required edges if specified
+                print(f"DEBUG: Number of edges with |weight| > 0.01: {non_zero_edges}")                  # Enforce required edges if specified
                 if constraints and 'required_edges' in constraints:
-                    self._enforce_required_edges(constraints['required_edges'], numeric_data)
+                    self._enforce_required_edges(constraints['required_edges'], encoded_data)
             
             return True
             
@@ -152,3 +151,162 @@ class CausalDiscovery:
     def get_adjacency_matrix(self):
         """Get the discovered adjacency matrix"""
         return self.adjacency_matrix
+    
+    def _encode_data_for_causal_discovery(self, data: pd.DataFrame):
+        """
+        Encode categorical variables as numeric for causal discovery.
+        This allows DirectLiNGAM to work with categorical causes.
+        
+        Returns:
+        - encoded_data: DataFrame with categorical variables encoded as numeric
+        - column_mapping: Dict mapping encoded column names to original values
+        """
+        encoded_data = data.copy()
+        column_mapping = {}
+        
+        print("DEBUG: Encoding categorical variables for causal discovery...")
+        
+        for col in data.columns:
+            if data[col].dtype == 'object' or data[col].dtype.name == 'category':
+                print(f"DEBUG: Encoding categorical column: {col}")
+                
+                # Get unique values
+                unique_vals = data[col].dropna().unique()
+                print(f"DEBUG: Unique values in {col}: {unique_vals}")
+                
+                # Create smart encoding based on column content
+                if col.lower() in ['fuel_type', 'fuel', 'energy_type']:
+                    # For fuel types, prioritize by environmental impact
+                    encoding = self._encode_fuel_type(unique_vals)
+                elif col.lower() in ['vehicle_type', 'vehicle', 'transport_type']:
+                    # For vehicle types, encode by typical capacity/emissions
+                    encoding = self._encode_vehicle_type(unique_vals)
+                elif col.lower() in ['region', 'location', 'area']:
+                    # For regions, use alphabetical order
+                    encoding = {val: i for i, val in enumerate(sorted(unique_vals))}
+                else:
+                    # Default: alphabetical order
+                    encoding = {val: i for i, val in enumerate(sorted(unique_vals))}
+                
+                # Apply encoding
+                encoded_col_name = f"{col}_Code"
+                encoded_data[encoded_col_name] = data[col].map(encoding)
+                
+                # Drop original categorical column
+                encoded_data = encoded_data.drop(columns=[col])
+                
+                # Store mapping for later reference
+                column_mapping[encoded_col_name] = {
+                    'original_column': col,
+                    'encoding': encoding,
+                    'reverse_encoding': {v: k for k, v in encoding.items()}
+                }
+                
+                print(f"DEBUG: Encoded {col} as {encoded_col_name} with mapping: {encoding}")
+        
+        print(f"DEBUG: Final encoded data shape: {encoded_data.shape}")
+        print(f"DEBUG: Final encoded columns: {list(encoded_data.columns)}")
+        
+        return encoded_data, column_mapping
+    
+    def _encode_fuel_type(self, unique_vals):
+        """Smart encoding for fuel types based on environmental impact"""
+        # Order by environmental impact (lower values = cleaner)
+        fuel_priority = {
+            'Electric': 0,
+            'electric': 0,
+            'Electric_Van': 0,
+            'Hybrid': 1,
+            'hybrid': 1,
+            'Gasoline': 2,
+            'gasoline': 2,
+            'Petrol': 2,
+            'petrol': 2,
+            'Diesel': 3,
+            'diesel': 3
+        }
+        
+        encoding = {}
+        next_code = max(fuel_priority.values()) + 1 if fuel_priority.values() else 0
+        
+        for val in unique_vals:
+            if val in fuel_priority:
+                encoding[val] = fuel_priority[val]
+            else:
+                encoding[val] = next_code
+                next_code += 1
+        
+        return encoding
+    
+    def _encode_vehicle_type(self, unique_vals):
+        """Smart encoding for vehicle types based on typical capacity/emissions"""
+        # Order by typical capacity/emissions (lower values = smaller/cleaner)
+        vehicle_priority = {
+            'Electric_Van': 0,
+            'electric_van': 0,
+            'Van': 1,
+            'van': 1,
+            'Car': 1,
+            'car': 1,
+            'Truck': 2,
+            'truck': 2,
+            'Semi': 3,
+            'semi': 3
+        }
+        
+        encoding = {}
+        next_code = max(vehicle_priority.values()) + 1 if vehicle_priority.values() else 0
+        
+        for val in unique_vals:
+            if val in vehicle_priority:
+                encoding[val] = vehicle_priority[val]
+            else:
+                encoding[val] = next_code
+                next_code += 1
+        
+        return encoding
+    
+    def _filter_constraints_for_encoded_columns(self, constraints, encoded_columns):
+        """Filter constraints to work with encoded column names"""
+        if not constraints:
+            return constraints
+        
+        filtered = {}
+        
+        # Filter forbidden edges
+        if 'forbidden_edges' in constraints:
+            filtered['forbidden_edges'] = []
+            for edge in constraints['forbidden_edges']:
+                # Try to map original column names to encoded names
+                mapped_edge = self._map_edge_to_encoded(edge, encoded_columns)
+                if mapped_edge:
+                    filtered['forbidden_edges'].append(mapped_edge)
+        
+        # Filter required edges  
+        if 'required_edges' in constraints:
+            filtered['required_edges'] = []
+            for edge in constraints['required_edges']:
+                mapped_edge = self._map_edge_to_encoded(edge, encoded_columns)
+                if mapped_edge:
+                    filtered['required_edges'].append(mapped_edge)
+        
+        return filtered
+    
+    def _map_edge_to_encoded(self, edge, encoded_columns):
+        """Map an edge from original column names to encoded column names"""
+        source, target = edge
+        
+        # Check if columns exist as-is (for numeric columns)
+        if source in encoded_columns and target in encoded_columns:
+            return [source, target]
+        
+        # Check for encoded versions
+        source_encoded = f"{source}_Code" if f"{source}_Code" in encoded_columns else source
+        target_encoded = f"{target}_Code" if f"{target}_Code" in encoded_columns else target
+        
+        if source_encoded in encoded_columns and target_encoded in encoded_columns:
+            return [source_encoded, target_encoded]
+        
+        # Edge references columns not in the encoded dataset
+        print(f"DEBUG: Skipping constraint edge {source} -> {target} (columns not found in encoded data)")
+        return None

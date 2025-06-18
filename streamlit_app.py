@@ -322,8 +322,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
     
     # Step 3: Causal Discovery
     st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
-    
-    # Add validation for constraints
+      # Add validation for constraints
     constraints_ready = (
         st.session_state.get('domain_constraints_generated') or 
         st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints")
@@ -344,26 +343,44 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             st.session_state['causal_discovery_completed'] = False
             st.error("❌ Causal discovery failed")
     
-    # Show causal discovery results    if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
+    # Show causal discovery results
+    if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.subheader("📈 Discovered Causal Graph")
-            # Use numeric columns from discovery if available
-            if hasattr(analyzer.discovery, 'numeric_columns') and analyzer.discovery.numeric_columns:
-                graph_columns = analyzer.discovery.numeric_columns
-                st.info(f"📊 Showing relationships between {len(graph_columns)} numeric variables")
-                if analyzer.discovery.categorical_columns:
-                    with st.expander("ℹ️ Excluded Categorical Variables"):
-                        st.write(f"These variables were excluded from causal discovery: {', '.join(analyzer.discovery.categorical_columns)}")
+            # Use encoded columns from discovery (these match the adjacency matrix dimensions)
+            if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
+                graph_columns = analyzer.discovery.encoded_columns
+                st.info(f"📊 Showing relationships between {len(graph_columns)} variables (categorical variables encoded as numeric)")
+                
+                # Add explanation
+                st.markdown("""
+                **How to read this graph:**
+                - 🔵 **Nodes** = Variables in your dataset (categorical variables shown with "_Code" suffix)
+                - ➡️ **Arrows** = Causal relationships (A → B means A causes B)
+                - 🎨 **Colors** = Relationship strength (Red=Strong, Orange=Medium, Blue=Weak)
+                """)
+                
+                # Show encoding information
+                if hasattr(analyzer.discovery, 'column_mapping') and analyzer.discovery.column_mapping:
+                    with st.expander("🔢 Variable Encoding Information"):
+                        for encoded_col, mapping_info in analyzer.discovery.column_mapping.items():
+                            original_col = mapping_info['original_column']
+                            encoding = mapping_info['encoding']
+                            st.write(f"**{encoded_col}** (from {original_col}):")
+                            for original_val, code in encoding.items():
+                                st.write(f"  • {original_val} → {code}")
             else:
+                # Fallback to original columns if encoded columns not available
                 graph_columns = list(analyzer.data.columns)
             
-            show_causal_graph(analyzer.adjacency_matrix, graph_columns)
+            show_causal_graph(analyzer.adjacency_matrix, graph_columns, 
+                             getattr(analyzer.discovery, 'column_mapping', None))
         
         with col2:
             st.subheader("📊 Adjacency Matrix")
-            # Use numeric columns for adjacency matrix display
+            # Use the same columns that match the adjacency matrix dimensions
             adj_df = pd.DataFrame(
                 analyzer.adjacency_matrix, 
                 index=graph_columns, 

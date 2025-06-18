@@ -54,6 +54,31 @@ def show_data_quality_summary(data):
             
             st.write(col_info)
 
+def create_display_names(columns, column_mapping=None):
+    """Create user-friendly display names for encoded variables
+    
+    Parameters:
+    - columns (List[str]): List of column names (may include encoded names like 'Fuel_Type_Code')
+    - column_mapping (Dict): Optional mapping from encoded names to original info
+    
+    Returns:
+    - List[str]: User-friendly display names
+    """
+    if not column_mapping:
+        return columns
+    
+    display_names = []
+    for col in columns:
+        if col in column_mapping:
+            # Use original column name for display
+            original_name = column_mapping[col]['original_column']
+            display_names.append(original_name)
+        else:
+            # Keep original name
+            display_names.append(col)
+    
+    return display_names
+
 def show_correlation_heatmap(correlation_matrix):
     """Display correlation heatmap
     
@@ -69,21 +94,38 @@ def show_correlation_heatmap(correlation_matrix):
     )
     st.plotly_chart(fig_corr, use_container_width=True)
 
-def show_causal_graph(adjacency_matrix, columns):
+def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
     """Display interactive causal graph with directional arrows
     
     Parameters:
     - adjacency_matrix (np.ndarray): MUTABLE - 2D array representing causal relationships
+      DirectLiNGAM format: adjacency_matrix[i,j] = effect strength from variable j to variable i
     - columns (List[str]): MUTABLE - List of column names for graph labels
+    - column_mapping (Dict): Optional mapping from encoded names to original info for display
+    
+    Note: Arrows point from cause to effect (j → i when adjacency_matrix[i,j] != 0)
     """
     import numpy as np
+    
+    # Create user-friendly display names
+    display_names = create_display_names(columns, column_mapping)
+    
+    # Debug information for edge directions
+    print(f"DEBUG: Creating causal graph with {len(columns)} nodes")
+    edge_count = 0
+    for i in range(len(columns)):
+        for j in range(len(columns)):
+            if abs(adjacency_matrix[i, j]) > 0.01:
+                print(f"DEBUG: Edge {display_names[j]} → {display_names[i]} (weight: {adjacency_matrix[i, j]:.3f})")
+                edge_count += 1
+    print(f"DEBUG: Total edges to display: {edge_count}")
     
     # Create NetworkX directed graph from adjacency matrix
     G = nx.DiGraph()
     
-    # Add nodes with column names
-    for i, col in enumerate(columns):
-        G.add_node(i, label=col)
+    # Add nodes with display names
+    for i, display_name in enumerate(display_names):
+        G.add_node(i, label=display_name)
     
     # Add edges based on adjacency matrix (only if weight > threshold)
     threshold = 0.01
@@ -98,54 +140,75 @@ def show_causal_graph(adjacency_matrix, columns):
     
     # Create plot
     fig = go.Figure()
-    
-    # Add edges with arrows
+      # Add edges with arrows
     for edge in G.edges(data=True):
         x0, y0 = pos[edge[0]]
         x1, y1 = pos[edge[1]]
         weight = edge[2]['weight']
         
-        # Calculate arrow position (90% along the edge)
-        arrow_x = x0 + 0.9 * (x1 - x0)
-        arrow_y = y0 + 0.9 * (y1 - y0)
-        
-        # Calculate arrow direction
+        # Calculate direction vector and normalize
         dx = x1 - x0
         dy = y1 - y0
         length = np.sqrt(dx**2 + dy**2)
         if length > 0:
             dx /= length
             dy /= length
-          # Edge line (consistent width for all edges)
+        
+        # Calculate node radius (to avoid arrows going under nodes)
+        node_radius = 0.08  # Approximate radius based on node size
+        
+        # Adjust start and end points to avoid overlap with nodes
+        start_x = x0 + node_radius * dx
+        start_y = y0 + node_radius * dy
+        end_x = x1 - node_radius * dx
+        end_y = y1 - node_radius * dy
+          # Calculate arrow position (85% along the adjusted edge to avoid node overlap)
+        arrow_x = start_x + 0.85 * (end_x - start_x)
+        arrow_y = start_y + 0.85 * (end_y - start_y)
+        
+        # Edge line with better visibility
+        # Use different colors for different edge strengths
+        edge_strength = abs(weight)
+        if edge_strength > 0.5:
+            edge_color = '#d62728'  # Strong red for strong relationships
+            edge_width = 4
+        elif edge_strength > 0.2:
+            edge_color = '#ff7f0e'  # Orange for medium relationships
+            edge_width = 3
+        else:
+            edge_color = '#1f77b4'  # Blue for weak relationships
+            edge_width = 2
+        
         fig.add_trace(go.Scatter(
-            x=[x0, x1], y=[y0, y1],
-            line=dict(width=2, color='gray'),
+            x=[start_x, end_x], y=[start_y, end_y],  # Use adjusted coordinates
+            line=dict(width=edge_width, color=edge_color),
             hoverinfo='text',
-            hovertext=f"{columns[edge[0]]} → {columns[edge[1]]}<br>Weight: {weight:.3f}",
+            hovertext=f"{display_names[edge[0]]} → {display_names[edge[1]]}<br>Weight: {weight:.3f}<br>Strength: {'Strong' if edge_strength > 0.5 else 'Medium' if edge_strength > 0.2 else 'Weak'}",
             mode='lines',
             showlegend=False
         ))
         
-        # Arrow head
-        arrow_size = 0.03
+        # Improved arrow head - larger and more visible
+        arrow_size = 0.05  # Increased from 0.03
         arrow_x1 = arrow_x - arrow_size * (dx + dy)
         arrow_y1 = arrow_y - arrow_size * (dy - dx)
         arrow_x2 = arrow_x - arrow_size * (dx - dy)
         arrow_y2 = arrow_y - arrow_size * (dy + dx)
         
+        # Arrow head with fill for better visibility
         fig.add_trace(go.Scatter(
-            x=[arrow_x1, arrow_x, arrow_x2],
-            y=[arrow_y1, arrow_y, arrow_y2],
-            line=dict(width=2, color='darkgray'),
+            x=[arrow_x1, arrow_x, arrow_x2, arrow_x1],  # Close the triangle
+            y=[arrow_y1, arrow_y, arrow_y2, arrow_y1],
+            fill='toself',
+            fillcolor=edge_color,
+            line=dict(width=2, color=edge_color),
             mode='lines',
             showlegend=False,
-            hoverinfo='skip'
-        ))
-    
-    # Add nodes
+            hoverinfo='skip'        ))
+      # Add nodes with improved styling
     node_x = [pos[node][0] for node in G.nodes()]
     node_y = [pos[node][1] for node in G.nodes()]
-    node_text = [columns[i] for i in G.nodes()]
+    node_text = [display_names[i] for i in G.nodes()]
     
     fig.add_trace(go.Scatter(
         x=node_x, y=node_y,
@@ -154,28 +217,55 @@ def show_causal_graph(adjacency_matrix, columns):
         hovertext=[f"Variable: {text}" for text in node_text],
         text=node_text,
         textposition="middle center",
-        textfont=dict(size=12, color='darkblue'),
+        textfont=dict(size=12, color='darkblue', family='Arial Black'),  # Changed to dark blue for visibility
         marker=dict(
-            size=60, 
-            color='lightblue', 
-            line=dict(width=2, color='darkblue')
+            size=80,  # Increased from 60 
+            color='lightcyan',  # Light background for better text contrast
+            line=dict(width=3, color='#2E86AB'),
+            opacity=0.9
         ),
         showlegend=False
     ))
     
-    # Add title with edge count
+    # Add legend for edge colors
+    legend_traces = [
+        go.Scatter(x=[None], y=[None], mode='markers', 
+                  marker=dict(size=10, color='#d62728'), 
+                  name='Strong (>0.5)', showlegend=True),
+        go.Scatter(x=[None], y=[None], mode='markers', 
+                  marker=dict(size=10, color='#ff7f0e'), 
+                  name='Medium (0.2-0.5)', showlegend=True),
+        go.Scatter(x=[None], y=[None], mode='markers', 
+                  marker=dict(size=10, color='#1f77b4'), 
+                  name='Weak (<0.2)', showlegend=True)
+    ]
+    
+    for trace in legend_traces:
+        fig.add_trace(trace)    # Add title with edge count and better styling
     edge_count = len(G.edges())
-    title_text = f"Causal Graph ({edge_count} causal relationships)"
+    title_text = f"🔗 Causal Relationships Graph ({edge_count} connections)"
     
     fig.update_layout(
-        title=dict(text=title_text, x=0.5, font=dict(size=16)),
-        showlegend=False,
+        title=dict(text=title_text, x=0.5, font=dict(size=18, color='#2E86AB')),
+        showlegend=True,
+        legend=dict(
+            title="Edge Strength:",
+            orientation="v",  # Changed to vertical
+            yanchor="top",
+            y=0.98,
+            xanchor="left",
+            x=1.02,  # Position to the right of the graph
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="gray",
+            borderwidth=1
+        ),
         hovermode='closest',
-        margin=dict(b=20, l=5, r=5, t=40),
+        margin=dict(b=20, l=5, r=80, t=60),  # Increased right margin for legend
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor='white',
-        height=500
+        plot_bgcolor='#f8f9fa',
+        paper_bgcolor='white',
+        height=600
     )
     
     if edge_count == 0:
