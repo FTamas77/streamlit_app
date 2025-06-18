@@ -67,23 +67,23 @@ def test_constraint_structure_consistency():
     
     api_key = get_api_key()
     if not api_key:
-        pytest.skip("No API key available for integration tests")
-      # Use realistic business scenario with clear temporal and logical relationships
+        pytest.skip("No API key available for integration tests")    # Use realistic business scenario with clear temporal and logical relationships
     columns = ['customer_age', 'income_level', 'marketing_exposure', 'product_purchased']
     domain_context = """
     E-commerce customer behavior analysis with clear causal relationships:
     
     GIVEN FACTS:
-    - Customer age is fixed demographic data (cannot be caused by other factors)
-    - Income level may be influenced by age (older customers may have different income patterns)
-    - Marketing exposure is controlled by the company (business decision)
-    - Product purchase is the final outcome we want to understand
+    - customer_age is fixed demographic data (cannot be caused by other factors)
+    - income_level may be influenced by customer_age (older customers may have different income patterns)
+    - marketing_exposure is controlled by the company (business decision)
+    - product_purchased is the final outcome we want to understand
     
     LOGICAL CONSTRAINTS:
-    - Purchase decisions CANNOT cause age or income (temporal impossibility)
-    - Marketing exposure and income level CAN influence purchase decisions
-    - Age MAY influence income level
+    - product_purchased decisions CANNOT cause customer_age or income_level (temporal impossibility)
+    - marketing_exposure and income_level CAN influence product_purchased decisions
+    - customer_age MAY influence income_level
     
+    Use these EXACT column names in your constraints: customer_age, income_level, marketing_exposure, product_purchased
     Focus on forbidden edges (what cannot cause what) rather than required edges.
     """
     

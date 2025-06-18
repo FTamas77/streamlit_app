@@ -44,6 +44,11 @@ def create_mock_analyzer(with_adjacency_matrix=False):
     })
     mock_analyzer.data = data
     
+    # Mock the discovery object with numeric columns
+    mock_discovery = Mock()
+    mock_discovery.numeric_columns = ['X', 'Y', 'Z', 'treatment', 'outcome']
+    mock_analyzer.discovery = mock_discovery
+    
     if with_adjacency_matrix:
         # Create adjacency matrix that reflects the true causal structure
         adjacency_matrix = np.array([

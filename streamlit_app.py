@@ -191,9 +191,7 @@ with col2:
     sample_data_dir = os.path.join(os.path.dirname(__file__), 'sample_data')
     sample_files = []
     sample_descriptions = {
-        'medical_study.csv': '🏥 Medical Treatment Study (Recovery Time Analysis)',
-        'marketing_campaign.csv': '📈 Marketing ROI Analysis (Ad Spend vs Sales)',
-        'education_study.csv': '🎓 Education Study (Study Hours vs Test Scores)'
+        'CO2 SupplyChain Demo.csv': '🌱 Supply Chain CO2 Emissions (Logistics Impact Analysis)'
     }
     
     if os.path.exists(sample_data_dir):
@@ -206,7 +204,7 @@ with col2:
             "Choose a sample dataset:",
             options=['None'] + sample_files,
             format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
-            help="These datasets demonstrate different causal relationships and include realistic confounding factors."
+            help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis."
         )
         
         if selected_sample != 'None':
@@ -259,23 +257,11 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         sample_name = st.session_state['sample_data_loaded']
         
         # Show sample dataset description
-        if sample_name == 'medical_study.csv':
+        if sample_name == 'CO2 SupplyChain Demo.csv':
             st.info("""
-            🏥 **Medical Treatment Study**: This dataset examines the effect of a medical treatment on patient recovery time. 
-            Key variables include patient age, disease severity, treatment status, and recovery days. 
-            The goal is to determine if the treatment reduces recovery time while controlling for confounding factors.
-            """)
-        elif sample_name == 'marketing_campaign.csv':
-            st.info("""
-            📈 **Marketing ROI Analysis**: This dataset analyzes the relationship between advertising spend and sales performance. 
-            Variables include monthly ad spend, market conditions, seasonality effects, and sales revenue. 
-            The goal is to measure the return on advertising investment.
-            """)
-        elif sample_name == 'education_study.csv':
-            st.info("""
-            🎓 **Education Effectiveness Study**: This dataset studies the impact of study time on student performance. 
-            Variables include student IQ, motivation level, weekly study hours, and test scores. 
-            The goal is to quantify how additional study time improves academic performance.
+            🌱 **Supply Chain CO2 Emissions Analysis**: This dataset examines factors affecting CO2 emissions in agricultural supply chains. 
+            Variables include transportation method, distance, fuel type, vehicle type, weather conditions, and resulting emissions. 
+            The goal is to identify causal factors that could reduce environmental impact in logistics operations.
             """)
 
     # Step 2: Domain Constraints
@@ -283,7 +269,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
     
     domain_context = st.text_area(
         "Describe your domain/business context:",
-        placeholder="e.g., 'This is customer behavior data where age comes before purchase decisions...'",
+        placeholder="e.g., 'This is supply chain data where fuel type and vehicle type affect transportation distance and emissions...'",
         height=100
     )
     
@@ -358,20 +344,30 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             st.session_state['causal_discovery_completed'] = False
             st.error("❌ Causal discovery failed")
     
-    # Show causal discovery results
-    if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
+    # Show causal discovery results    if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.subheader("📈 Discovered Causal Graph")
-            show_causal_graph(analyzer.adjacency_matrix, list(analyzer.data.columns))
+            # Use numeric columns from discovery if available
+            if hasattr(analyzer.discovery, 'numeric_columns') and analyzer.discovery.numeric_columns:
+                graph_columns = analyzer.discovery.numeric_columns
+                st.info(f"📊 Showing relationships between {len(graph_columns)} numeric variables")
+                if analyzer.discovery.categorical_columns:
+                    with st.expander("ℹ️ Excluded Categorical Variables"):
+                        st.write(f"These variables were excluded from causal discovery: {', '.join(analyzer.discovery.categorical_columns)}")
+            else:
+                graph_columns = list(analyzer.data.columns)
+            
+            show_causal_graph(analyzer.adjacency_matrix, graph_columns)
         
         with col2:
             st.subheader("📊 Adjacency Matrix")
+            # Use numeric columns for adjacency matrix display
             adj_df = pd.DataFrame(
                 analyzer.adjacency_matrix, 
-                index=analyzer.data.columns, 
-                columns=analyzer.data.columns
+                index=graph_columns, 
+                columns=graph_columns
             )
             st.dataframe(adj_df.round(3))
     
@@ -385,56 +381,80 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             if relationships:
                 st.success("✅ Relationship analysis completed!")
                 
+                # Show info about numeric vs categorical variables
+                if 'categorical_columns' in relationships and relationships['categorical_columns']:
+                    st.info(f"📊 Correlation analysis performed on {len(relationships['numeric_columns'])} numeric variables. {len(relationships['categorical_columns'])} categorical variables were excluded.")
+                    with st.expander("ℹ️ Excluded Categorical Variables"):
+                        st.write(f"Categorical variables excluded from correlation analysis: {', '.join(relationships['categorical_columns'])}")
+                
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    st.subheader("🔥 Correlation Heatmap")
-                    show_correlation_heatmap(relationships['correlation_matrix'])
+                    st.subheader("🔥 Correlation Heatmap (Numeric Variables)")
+                    if not relationships['correlation_matrix'].empty:
+                        show_correlation_heatmap(relationships['correlation_matrix'])
+                    else:
+                        st.warning("No numeric data available for correlation analysis")
                 
                 with col2:
                     st.subheader("💪 Strongest Correlations")
                     strong_corr = relationships['strong_correlations']
                     if strong_corr:
+                        st.write(f"Found {len(strong_corr)} strong correlations (|r| > 0.5):")
                         for corr in strong_corr[:5]:
                             st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
                     else:
                         st.write("No strong correlations (>0.5) found")
     
     # Step 5: Causal Inference Analysis
-    st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)    
     if analyzer.data is not None and not analyzer.data.empty:
-        col1, col2, col3 = st.columns(3)
+        # Get numeric columns for causal analysis
+        numeric_columns = analyzer.get_numeric_columns()
+        categorical_columns = analyzer.get_categorical_columns()
         
-        with col1:
-            treatment_var = st.selectbox(
-                "Treatment Variable (Cause)",
-                options=list(analyzer.data.columns),
-                key="treatment_select"
-            )
-        
-        with col2:
-            outcome_var = st.selectbox(
-                "Outcome Variable (Effect)", 
-                options=[col for col in analyzer.data.columns if col != treatment_var],
-                key="outcome_select"
-            )
-        
-        with col3:
-            confounders = st.multiselect(
-                "Confounding Variables",
-                options=[col for col in analyzer.data.columns if col not in [treatment_var, outcome_var]],
-                key="confounders_select"
-            )
-        
-        if st.button("🔬 Run Causal Inference", type="primary"):
-            if treatment_var != outcome_var:
-                with st.spinner("Running causal inference..."):
-                    ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
-                    st.session_state['ate_results'] = ate_results
-                    st.session_state['selected_treatment'] = treatment_var
-                    st.session_state['selected_outcome'] = outcome_var
-            else:
-                st.error("❌ Please select different variables for treatment and outcome")
+        if len(numeric_columns) < 2:
+            st.error("❌ Need at least 2 numeric variables for causal analysis. Please ensure your data contains numeric columns.")
+            if categorical_columns:
+                st.warning(f"📊 Note: {len(categorical_columns)} categorical variables were found but cannot be used for causal inference: {', '.join(categorical_columns[:5])}{'...' if len(categorical_columns) > 5 else ''}")
+        else:
+            # Show user which variables are available
+            if categorical_columns:
+                st.info(f"ℹ️ **Variable Selection:** Using {len(numeric_columns)} numeric variables for causal analysis. {len(categorical_columns)} categorical variables are excluded from treatment/outcome selection.")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                treatment_var = st.selectbox(
+                    "Treatment Variable (Cause)",
+                    options=numeric_columns,
+                    key="treatment_select",
+                    help="Select a numeric variable that represents the intervention or treatment"
+                )
+            
+            with col2:
+                outcome_var = st.selectbox(
+                    "Outcome Variable (Effect)", 
+                    options=[col for col in numeric_columns if col != treatment_var],
+                    key="outcome_select",
+                    help="Select a numeric variable that represents the outcome you want to measure"
+                )
+            
+            with col3:
+                confounders = st.multiselect(
+                    "Confounding Variables",
+                    options=[col for col in numeric_columns if col not in [treatment_var, outcome_var]],
+                    key="confounders_select",
+                    help="Select variables that might influence both treatment and outcome"
+                )            
+            if st.button("🔬 Run Causal Inference", type="primary"):
+                if treatment_var != outcome_var:
+                    with st.spinner("Running causal inference..."):
+                        ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
+                        st.session_state['ate_results'] = ate_results
+                        st.session_state['selected_treatment'] = treatment_var
+                        st.session_state['selected_outcome'] = outcome_var
+                else:
+                    st.error("❌ Please select different variables for treatment and outcome")
     
     # Display results
     if st.session_state.get('ate_results'):
@@ -489,4 +509,6 @@ else:
     - 📊 Calculate treatment effects with confidence intervals
     - 🤖 Get AI-powered insights and recommendations
     - 🎯 Simulate policy interventions
+    
+    **Try our sample dataset:** 🌱 CO2 Supply Chain Analysis - explore how transportation factors affect environmental impact!
     """)

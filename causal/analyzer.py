@@ -24,6 +24,26 @@ class CausalAnalyzer:
         self.adjacency_matrix = None
         self.causal_model = None
         self.domain_constraints = None
+    
+    def get_numeric_columns(self):
+        """Get list of numeric columns available for causal analysis"""
+        if hasattr(self.discovery, 'numeric_columns') and self.discovery.numeric_columns:
+            return self.discovery.numeric_columns
+        elif self.data is not None:
+            # Fallback: determine numeric columns from data
+            return list(self.data.select_dtypes(include=[np.number]).columns)
+        else:
+            return []
+    
+    def get_categorical_columns(self):
+        """Get list of categorical columns that were excluded from causal analysis"""
+        if hasattr(self.discovery, 'categorical_columns') and self.discovery.categorical_columns:
+            return self.discovery.categorical_columns
+        elif self.data is not None:
+            # Fallback: determine categorical columns from data
+            return list(self.data.select_dtypes(exclude=[np.number]).columns)
+        else:
+            return []
         
     def load_data(self, uploaded_file):
         """Load data from uploaded Excel file with robust error handling"""

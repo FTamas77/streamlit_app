@@ -98,14 +98,23 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         print(f"DEBUG: calculate_ate_dowhy called with treatment={treatment}, outcome={outcome}")
         print(f"DEBUG: confounders provided: {confounders}")
         print(f"DEBUG: analyzer has adjacency_matrix: {hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None}")
-        
-        # Only create DOT graph if we have an adjacency matrix from causal discovery
+          # Only create DOT graph if we have an adjacency matrix from causal discovery
         graph = None
         if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
             print("DEBUG: Using adjacency_matrix to build graph for DoWhy")
+            
+            # Use numeric columns from discovery if available
+            if hasattr(analyzer.discovery, 'numeric_columns') and analyzer.discovery.numeric_columns:
+                graph_columns = analyzer.discovery.numeric_columns
+                print(f"DEBUG: Using numeric columns for graph: {graph_columns}")
+            else:
+                # Fallback to all columns (for backward compatibility)
+                graph_columns = analyzer.data.columns.tolist()
+                print(f"DEBUG: Using all columns for graph (fallback): {graph_columns}")
+            
             dot_graph = _adjacency_to_dowhy_dot_graph(
                 analyzer.adjacency_matrix, 
-                analyzer.data.columns.tolist(), 
+                graph_columns, 
                 treatment, 
                 outcome, 
                 confounders

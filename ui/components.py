@@ -30,7 +30,28 @@ def show_data_quality_summary(data):
     with st.expander("📈 Data Quality Summary"):
         st.write("**Column Information:**")
         for col in data.columns:
-            col_info = f"• **{col}**: {data[col].dtype}, Range: [{data[col].min():.2f}, {data[col].max():.2f}]"
+            # Check if column is numeric
+            if data[col].dtype in ['int64', 'float64', 'int32', 'float32']:
+                # For numeric columns, show range with proper formatting
+                try:
+                    min_val = data[col].min()
+                    max_val = data[col].max()
+                    col_info = f"• **{col}**: {data[col].dtype}, Range: [{min_val:.2f}, {max_val:.2f}]"
+                except (ValueError, TypeError):
+                    # Fallback if numeric operations fail
+                    col_info = f"• **{col}**: {data[col].dtype}, Unique values: {data[col].nunique()}"
+            else:
+                # For categorical/text columns, show unique count and sample values
+                unique_count = data[col].nunique()
+                if unique_count <= 10:
+                    # Show all unique values if there are few
+                    unique_vals = list(data[col].unique())
+                    col_info = f"• **{col}**: {data[col].dtype}, Values: {unique_vals}"
+                else:
+                    # Show count and first few values if there are many
+                    sample_vals = list(data[col].unique()[:5])
+                    col_info = f"• **{col}**: {data[col].dtype}, {unique_count} unique values (e.g., {sample_vals}...)"
+            
             st.write(col_info)
 
 def show_correlation_heatmap(correlation_matrix):
@@ -198,6 +219,15 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     """
     st.markdown("### 🎮 Interactive Scenario Explorer")
     st.write("**Adjust the sliders below to explore different policy scenarios and see the impact in real-time:**")
+    
+    # Safety check: ensure variables are numeric
+    if not pd.api.types.is_numeric_dtype(analyzer.data[treatment_var]):
+        st.error(f"❌ Treatment variable '{treatment_var}' is not numeric. Cannot run scenario explorer.")
+        return
+    
+    if not pd.api.types.is_numeric_dtype(analyzer.data[outcome_var]):
+        st.error(f"❌ Outcome variable '{outcome_var}' is not numeric. Cannot run scenario explorer.")
+        return
     
     # Get current state
     current_treatment_mean = analyzer.data[treatment_var].mean()
