@@ -171,11 +171,9 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
         'spring': nx.spring_layout(G, seed=42, k=3, iterations=100),
         'circular': nx.circular_layout(G),
         'kamada_kawai': nx.kamada_kawai_layout(G) if len(G.nodes) > 2 else nx.spring_layout(G, seed=42),
-        'shell': nx.shell_layout(G) if len(G.nodes) > 3 else nx.spring_layout(G, seed=42)
-    }
-    
-    # UI Controls
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+        'shell': nx.shell_layout(G) if len(G.nodes) > 3 else nx.spring_layout(G, seed=42)    }
+      # UI Controls with edge management
+    col1, col2, col3 = st.columns([2, 2, 2])
     
     with col1:
         layout_choice = st.selectbox(
@@ -196,13 +194,57 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
         )
     
     with col3:
-        show_edge_labels = st.checkbox("🏷️ Show Edge Labels", value=False, help="Display edge weights on graph")
-    
-    with col4:
         node_size_factor = st.slider("📏 Node Size", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
     
-    # Filter edges based on strength
-    filtered_edges = [(s, t, w) for s, t, w in valid_edges if abs(w) >= min_edge_strength]
+    # Manual Edge Control Section
+    with st.expander("✂️ Manual Edge Control", expanded=False):
+        st.write("**Select edges to hide from the graph:**")
+        
+        # Initialize session state for disabled edges
+        if 'disabled_edges' not in st.session_state:
+            st.session_state.disabled_edges = set()
+          # Create edge options for manual control
+        edge_options = []
+        for source, target, weight in valid_edges:
+            if abs(weight) >= min_edge_strength:
+                edge_label = f"{display_names[source]} → {display_names[target]}"
+                edge_key = f"{source}_{target}"
+                edge_options.append((edge_key, edge_label))
+        
+        if edge_options:
+            # Multi-select for disabling edges
+            disabled_edge_keys = st.multiselect(
+                "Select edges to hide:",
+                options=[key for key, _ in edge_options],
+                format_func=lambda key: next(label for k, label in edge_options if k == key),
+                default=list(st.session_state.disabled_edges),
+                help="Selected edges will be hidden from the graph"
+            )
+            
+            # Update session state
+            st.session_state.disabled_edges = set(disabled_edge_keys)
+            
+            # Reset button
+            col_reset1, col_reset2 = st.columns([1, 1])
+            with col_reset1:
+                if st.button("🔄 Show All Edges"):
+                    st.session_state.disabled_edges = set()
+                    st.rerun()
+            
+            with col_reset2:
+                if st.button("❌ Hide All Edges"):
+                    st.session_state.disabled_edges = set(key for key, _ in edge_options)
+                    st.rerun()
+        else:
+            st.info("No edges available for manual control with current strength filter.")
+    
+    # Filter edges based on strength AND manual selection
+    filtered_edges = []
+    for source, target, weight in valid_edges:
+        if abs(weight) >= min_edge_strength:
+            edge_key = f"{source}_{target}"
+            if edge_key not in st.session_state.disabled_edges:
+                filtered_edges.append((source, target, weight))
     
     if not filtered_edges:
         st.warning(f"⚠️ No edges meet the minimum strength threshold of {min_edge_strength:.3f}")
@@ -259,13 +301,11 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
                 y=[start_y, end_y],
                 mode='lines',
                 line=dict(width=edge_width, color=edge_color),
-                hoverinfo='text',
-                hovertext=f"""
+                hoverinfo='text',                hovertext=f"""
                 <b>{display_names[source]} → {display_names[target]}</b><br>
-                Weight: {weight:.4f}<br>
-                Strength: {abs_weight:.4f}<br>
-                Type: {'Strong' if abs_weight > 0.5 else 'Medium' if abs_weight > 0.2 else 'Weak'}<br>
-                Direction: {'Positive' if weight > 0 else 'Negative'} influence
+                Causal relationship detected<br>
+                Strength: {'Strong' if abs_weight > 0.5 else 'Medium' if abs_weight > 0.2 else 'Weak'}<br>
+                Use DoWhy for effect estimation
                 """,
                 showlegend=False,
                 name=f"Edge_{source}_{target}"
@@ -289,26 +329,9 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
                 fillcolor=edge_color.replace('rgba', 'rgb').replace(', 0.', ', 1.').replace(', 1.', ', 1.0'),
                 line=dict(width=1, color=edge_color),
                 mode='lines',
-                showlegend=False,
-                hoverinfo='skip',
+                showlegend=False,                hoverinfo='skip',
                 name=f"Arrow_{source}_{target}"
             ))
-            
-            # Edge labels (optional)
-            if show_edge_labels:
-                mid_x = (start_x + end_x) / 2
-                mid_y = (start_y + end_y) / 2
-                
-                fig.add_trace(go.Scatter(
-                    x=[mid_x],
-                    y=[mid_y],
-                    mode='text',
-                    text=[f'{weight:.2f}'],
-                    textfont=dict(size=10, color='black'),
-                    showlegend=False,
-                    hoverinfo='skip',
-                    name=f"Label_{source}_{target}"
-                ))
     
     # Add nodes with enhanced interactivity
     node_x = [pos[node][0] for node in G.nodes()]
@@ -379,10 +402,9 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
             color=node_colors,
             line=dict(width=3, color='white'),
             opacity=0.9
-        ),
-        text=[G.nodes[node]['label'] for node in G.nodes()],
+        ),        text=[G.nodes[node]['label'] for node in G.nodes()],
         textposition="middle center",
-        textfont=dict(size=12, color='white', family='Arial Black'),
+        textfont=dict(size=12, color='black', family='Arial Black'),  # Changed to black for better readability
         hoverinfo='text',
         hovertext=hover_texts,
         showlegend=False,
@@ -459,8 +481,7 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
             'scale': 2
         }
     })
-    
-    # Graph statistics and insights
+      # Graph statistics and insights
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -479,6 +500,11 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
         most_important = [display_names[n] for n in G.nodes() if G.nodes[n]['importance'] == max_importance][0]
         st.metric("⭐ Key Variable", most_important)
     
+    # Edge Status Information
+    if st.session_state.get('disabled_edges'):
+        total_hidden = len(st.session_state.disabled_edges)
+        st.info(f"ℹ️ Currently hiding {total_hidden} edge(s). Use the 'Manual Edge Control' section above to manage them.")
+    
     # Interactive node analysis
     with st.expander("🔍 Detailed Node Analysis", expanded=False):
         selected_node = st.selectbox(
@@ -493,9 +519,9 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
             # Incoming edges (causes)
             incoming = [(display_names[j], adjacency_matrix[node_idx, j]) for j in range(len(columns)) 
                        if abs(adjacency_matrix[node_idx, j]) > 0.01]
-            
-            # Outgoing edges (effects)
-            outgoing = [(display_names[i], adjacency_matrix[i, node_idx]) for i in range(len(columns))                       if abs(adjacency_matrix[i, node_idx]) > 0.01]
+              # Outgoing edges (effects)
+            outgoing = [(display_names[i], adjacency_matrix[i, node_idx]) for i in range(len(columns))
+                       if abs(adjacency_matrix[i, node_idx]) > 0.01]
             
             col1, col2 = st.columns(2)
             
@@ -503,8 +529,8 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
                 st.write(f"**📥 What influences {selected_node}:**")
                 if incoming:
                     for cause, weight in sorted(incoming, key=lambda x: abs(x[1]), reverse=True):
-                        direction = "🔴" if weight < 0 else "🟢"
-                        st.write(f"{direction} **{cause}**: {weight:.4f}")
+                        strength = "Strong" if abs(weight) > 0.5 else "Medium" if abs(weight) > 0.2 else "Weak"
+                        st.write(f"🔗 **{cause}** ({strength} relationship)")
                 else:
                     st.write("No direct causes detected")
             
@@ -512,8 +538,8 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
                 st.write(f"**📤 What {selected_node} influences:**")
                 if outgoing:
                     for effect, weight in sorted(outgoing, key=lambda x: abs(x[1]), reverse=True):
-                        direction = "🔴" if weight < 0 else "🟢"
-                        st.write(f"{direction} **{effect}**: {weight:.4f}")
+                        strength = "Strong" if abs(weight) > 0.5 else "Medium" if abs(weight) > 0.2 else "Weak"
+                        st.write(f"🔗 **{effect}** ({strength} relationship)")
                 else:
                     st.write("No direct effects detected")
 
@@ -552,18 +578,35 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     st.markdown("### 🎮 Interactive Scenario Explorer")
     st.write("**Adjust the sliders below to explore different policy scenarios and see the impact in real-time:**")
     
+    # Determine which data to use based on variable types
+    # If treatment or outcome variables are encoded (end with '_Code'), use encoded data
+    use_encoded_data = (treatment_var.endswith('_Code') or outcome_var.endswith('_Code'))
+    
+    if use_encoded_data and hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
+        data_to_use = analyzer.discovery.encoded_data
+    else:
+        data_to_use = analyzer.data
+    
+    # Safety check: ensure variables exist in the data
+    if treatment_var not in data_to_use.columns:
+        st.error(f"❌ Treatment variable '{treatment_var}' not found in data. Available columns: {list(data_to_use.columns)}")
+        return
+    
+    if outcome_var not in data_to_use.columns:
+        st.error(f"❌ Outcome variable '{outcome_var}' not found in data. Available columns: {list(data_to_use.columns)}")
+        return
+    
     # Safety check: ensure variables are numeric
-    if not pd.api.types.is_numeric_dtype(analyzer.data[treatment_var]):
+    if not pd.api.types.is_numeric_dtype(data_to_use[treatment_var]):
         st.error(f"❌ Treatment variable '{treatment_var}' is not numeric. Cannot run scenario explorer.")
         return
     
-    if not pd.api.types.is_numeric_dtype(analyzer.data[outcome_var]):
+    if not pd.api.types.is_numeric_dtype(data_to_use[outcome_var]):
         st.error(f"❌ Outcome variable '{outcome_var}' is not numeric. Cannot run scenario explorer.")
         return
-    
-    # Get current state
-    current_treatment_mean = analyzer.data[treatment_var].mean()
-    current_outcome_mean = analyzer.data[outcome_var].mean()
+      # Get current state
+    current_treatment_mean = data_to_use[treatment_var].mean()
+    current_outcome_mean = data_to_use[outcome_var].mean()
     ate_estimate = ate_results['consensus_estimate']
     
     # Create two columns for scenario controls
@@ -571,7 +614,7 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     
     with col1:
         st.markdown("#### 📈 Scenario 1: Increase Treatment")
-        if analyzer.data[treatment_var].dtype in ['int64', 'bool']:
+        if data_to_use[treatment_var].dtype in ['int64', 'bool']:
             # For binary treatment, show percentage of population treated
             increase_pct = st.slider(
                 "Percentage of population to receive treatment",
@@ -599,8 +642,7 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
         st.metric(
             label=f"{treatment_var} (Scenario 1)",
             value=f"{scenario1_treatment:.3f}",
-            delta=f"{scenario1_treatment - current_treatment_mean:+.3f}"
-        )
+            delta=f"{scenario1_treatment - current_treatment_mean:+.3f}"        )
         st.metric(
             label=f"{outcome_var} (Scenario 1)", 
             value=f"{scenario1_outcome:.3f}",
@@ -609,7 +651,7 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     
     with col2:
         st.markdown("#### 📉 Scenario 2: Decrease Treatment")
-        if analyzer.data[treatment_var].dtype in ['int64', 'bool']:
+        if data_to_use[treatment_var].dtype in ['int64', 'bool']:
             # For binary treatment, show percentage of population treated
             decrease_pct = st.slider(
                 "Percentage of population to receive treatment ",
@@ -686,7 +728,35 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     
     if ate_estimate > 0:
         st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} > 0, increasing {treatment_var} generally improves {outcome_var}")
-    elif ate_estimate < 0:
-        st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} < 0, decreasing {treatment_var} generally improves {outcome_var}")
+    elif ate_estimate < 0:        st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} < 0, decreasing {treatment_var} generally improves {outcome_var}")
     else:
         st.warning(f"⚠️ **Interpretation:** ATE ≈ 0 suggests {treatment_var} has minimal impact on {outcome_var}")
+      # Additional scenario insights
+    st.markdown("### 📊 Policy Insights")
+    
+    # Show correlation information
+    if data_to_use is not None:
+        correlation = data_to_use[treatment_var].corr(data_to_use[outcome_var])
+        st.metric(
+            f"📈 Correlation between {treatment_var} and {outcome_var}",
+            f"{correlation:.3f}",
+            help="Correlation measures linear relationship but doesn't imply causation"
+        )
+        
+        # Show data distribution insights
+        with st.expander("📊 Data Distribution Analysis", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**{treatment_var} Statistics:**")
+                st.write(f"• Mean: {data_to_use[treatment_var].mean():.3f}")
+                st.write(f"• Std: {data_to_use[treatment_var].std():.3f}")
+                st.write(f"• Min: {data_to_use[treatment_var].min():.3f}")
+                st.write(f"• Max: {data_to_use[treatment_var].max():.3f}")
+            
+            with col2:
+                st.write(f"**{outcome_var} Statistics:**")
+                st.write(f"• Mean: {data_to_use[outcome_var].mean():.3f}")
+                st.write(f"• Std: {data_to_use[outcome_var].std():.3f}")
+                st.write(f"• Min: {data_to_use[outcome_var].min():.3f}")
+                st.write(f"• Max: {data_to_use[outcome_var].max():.3f}")

@@ -41,11 +41,11 @@ class CausalDiscovery:
                 
                 if encoded_data.shape[1] < 2:
                     print("ERROR: Need at least 2 columns for causal discovery after encoding")
-                    return False                
-                # Store column information for later use
+                    return False                  # Store column information for later use
                 self.original_columns = list(data.columns)
                 self.encoded_columns = list(encoded_data.columns)
                 self.column_mapping = column_mapping
+                self.encoded_data = encoded_data.copy()  # Store the encoded data for inference
                 
                 # Separate numeric and categorical from original data for display purposes
                 original_numeric = data.select_dtypes(include=[np.number]).columns.tolist()

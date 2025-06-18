@@ -28,7 +28,17 @@ class CausalAnalyzer:
     def get_numeric_columns(self):
         """Get list of numeric columns available for causal analysis"""
         if hasattr(self.discovery, 'numeric_columns') and self.discovery.numeric_columns:
-            return self.discovery.numeric_columns
+            # Get the original numeric columns
+            available_cols = list(self.discovery.numeric_columns)
+            
+            # Add encoded categorical columns if they exist
+            if hasattr(self.discovery, 'encoded_data') and self.discovery.encoded_data is not None:
+                encoded_cols = list(self.discovery.encoded_data.columns)
+                for col in encoded_cols:
+                    if col.endswith('_Code') and col not in available_cols:
+                        available_cols.append(col)
+            
+            return available_cols
         elif self.data is not None:
             # Fallback: determine numeric columns from data
             return list(self.data.select_dtypes(include=[np.number]).columns)
