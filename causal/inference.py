@@ -85,14 +85,52 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
     if not DOWHY_AVAILABLE:
         raise ImportError("DoWhy is required for ATE calculation but not available")
     
+    # Input validation
+    if not analyzer:
+        raise ValueError("Analyzer object is required but not provided")
+    
+    if not treatment or not isinstance(treatment, str):
+        raise ValueError(f"Treatment must be a non-empty string, got: {treatment}")
+    
+    if not outcome or not isinstance(outcome, str):
+        raise ValueError(f"Outcome must be a non-empty string, got: {outcome}")
+    
+    if treatment == outcome:
+        raise ValueError("Treatment and outcome variables cannot be the same")
+    
+    if confounders is not None:
+        if not isinstance(confounders, list):
+            raise ValueError("Confounders must be a list or None")
+        if treatment in confounders:
+            raise ValueError("Treatment variable cannot be included as a confounder")
+        if outcome in confounders:
+            raise ValueError("Outcome variable cannot be included as a confounder")
+        # Remove duplicates while preserving order
+        confounders = list(dict.fromkeys(confounders))
+    
+    # Check if analyzer has required data
+    if not hasattr(analyzer, 'data') or analyzer.data is None:
+        raise ValueError("Analyzer must have data loaded")
+    
+    if analyzer.data.empty:
+        raise ValueError("Analyzer data is empty")
+    
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         warnings.filterwarnings("ignore", category=UserWarning)
         warnings.filterwarnings("ignore", category=FutureWarning)
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         
-        from analytics.statistical_metrics import calculate_simple_metrics
-        from utils.effect_size import classify_effect_size
+        try:
+            from analytics.statistical_metrics import calculate_simple_metrics
+            from utils.effect_size import classify_effect_size
+        except ImportError as e:
+            print(f"DEBUG: Warning - Could not import metrics modules: {e}")
+            # Create fallback functions
+            def calculate_simple_metrics(data, treatment, outcome, effect):
+                return {}
+            def classify_effect_size(effect):
+                return "unknown"
         
         # Debug: show what parameters are present
         print(f"DEBUG: ================ CAUSAL INFERENCE DEBUG ================")
@@ -135,8 +173,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         # Check correlation
         if treatment in analyzer.data.columns and outcome in analyzer.data.columns:
             correlation = analyzer.data[treatment].corr(analyzer.data[outcome])
-            print(f"DEBUG: Correlation between {treatment} and {outcome}: {correlation:.4f}")
-          # Determine which data to use - CRITICAL: must match the graph columns
+            print(f"DEBUG: Correlation between {treatment} and {outcome}: {correlation:.4f}")        # Determine which data to use - CRITICAL: must match the graph columns
         use_encoded_data = False
         data_to_use = analyzer.data
         
@@ -159,22 +196,72 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         else:
             print(f"DEBUG: Using original data for inference")
         
-        # Verify variables exist in the data we're using
+        # Enhanced variable validation with detailed error messages
         missing_vars = []
+        invalid_vars = []
+        
+        # Check treatment variable
         if treatment not in data_to_use.columns:
             missing_vars.append(f"treatment '{treatment}'")
+        else:
+            # Validate treatment variable characteristics
+            treatment_data = data_to_use[treatment]
+            if treatment_data.isnull().all():
+                invalid_vars.append(f"treatment '{treatment}' contains only null values")
+            elif treatment_data.nunique() < 2:
+                invalid_vars.append(f"treatment '{treatment}' has insufficient variation (only {treatment_data.nunique()} unique value)")
+            elif not np.issubdtype(treatment_data.dtype, np.number):
+                invalid_vars.append(f"treatment '{treatment}' is not numeric (type: {treatment_data.dtype})")
+        
+        # Check outcome variable
         if outcome not in data_to_use.columns:
             missing_vars.append(f"outcome '{outcome}'")
+        else:
+            # Validate outcome variable characteristics
+            outcome_data = data_to_use[outcome]
+            if outcome_data.isnull().all():
+                invalid_vars.append(f"outcome '{outcome}' contains only null values")
+            elif outcome_data.nunique() < 2:
+                invalid_vars.append(f"outcome '{outcome}' has insufficient variation (only {outcome_data.nunique()} unique values)")
+            elif not np.issubdtype(outcome_data.dtype, np.number):
+                invalid_vars.append(f"outcome '{outcome}' is not numeric (type: {outcome_data.dtype})")
+        
+        # Check confounder variables
         if confounders:
             for conf in confounders:
                 if conf not in data_to_use.columns:
                     missing_vars.append(f"confounder '{conf}'")
+                else:
+                    # Validate confounder characteristics
+                    conf_data = data_to_use[conf]
+                    if conf_data.isnull().all():
+                        invalid_vars.append(f"confounder '{conf}' contains only null values")
+                    elif not np.issubdtype(conf_data.dtype, np.number):
+                        invalid_vars.append(f"confounder '{conf}' is not numeric (type: {conf_data.dtype})")
         
+        # Report validation errors
         if missing_vars:
             error_msg = f"Variables not found in {'encoded' if use_encoded_data else 'original'} data: {', '.join(missing_vars)}"
             print(f"DEBUG: ERROR: {error_msg}")
             print(f"DEBUG: Available columns: {list(data_to_use.columns)}")
             raise ValueError(error_msg)
+        
+        if invalid_vars:
+            error_msg = f"Invalid variable characteristics: {'; '.join(invalid_vars)}"
+            print(f"DEBUG: ERROR: {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Check for sufficient data
+        non_null_rows = data_to_use[[treatment, outcome] + (confounders or [])].dropna()
+        if len(non_null_rows) < 10:
+            error_msg = f"Insufficient data after removing null values: only {len(non_null_rows)} rows available (minimum 10 required)"
+            print(f"DEBUG: ERROR: {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Update data_to_use to clean data
+        if len(non_null_rows) < len(data_to_use):
+            print(f"DEBUG: Removing {len(data_to_use) - len(non_null_rows)} rows with null values")
+            data_to_use = non_null_rows
         
         print(f"DEBUG: Using {'encoded' if use_encoded_data else 'original'} data for inference")
         print(f"DEBUG: Data shape: {data_to_use.shape}")
@@ -258,28 +345,104 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         print(f"       - common_causes: {causal_model_args['common_causes']}")
         print(f"       - graph provided: {'graph' in causal_model_args}")
         
-        causal_model = CausalModel(**causal_model_args)
+        try:
+            causal_model = CausalModel(**causal_model_args)
+            print(f"DEBUG: CausalModel created successfully")
+        except Exception as e:
+            error_msg = f"Failed to create DoWhy CausalModel: {str(e)}"
+            print(f"DEBUG: ERROR: {error_msg}")
+            print(f"DEBUG: This might be due to graph/data inconsistencies or invalid variable specifications")
+            raise RuntimeError(error_msg) from e
         
-        print(f"DEBUG: CausalModel created successfully")
-        
-        # Identify causal effect
+        # Identify causal effect with error handling
         print(f"DEBUG: Identifying causal effect...")
-        identified_estimand = causal_model.identify_effect(proceed_when_unidentifiable=True)
-        print(f"DEBUG: Identified estimand: {identified_estimand}")
+        try:
+            identified_estimand = causal_model.identify_effect(proceed_when_unidentifiable=True)
+            print(f"DEBUG: Identified estimand: {identified_estimand}")
+            
+            # Check if DoWhy found any valid estimands
+            if hasattr(identified_estimand, 'estimands') and len(identified_estimand.estimands) == 0:
+                print(f"DEBUG: WARNING: No estimands identified by DoWhy")
+            elif str(identified_estimand).strip() == "":
+                print(f"DEBUG: WARNING: Empty estimand returned by DoWhy")
+                
+        except Exception as e:
+            error_msg = f"Failed to identify causal effect: {str(e)}"
+            print(f"DEBUG: ERROR: {error_msg}")
+            # Return a structured error response instead of raising
+            return {
+                "estimates": {
+                    "Linear Regression": {
+                        "estimate": 0.0,
+                        "confidence_interval": [None, None],
+                        "p_value": None,
+                        "method": "backdoor.linear_regression",
+                        "error": f"Identification failed: {str(e)}"
+                    }
+                },
+                "consensus_estimate": 0.0,
+                "robustness": {"status": "failed", "reason": "identification_error"},
+                "interpretation": f"Causal effect identification failed: {str(e)}",
+                "recommendation": "Check data quality, variable specifications, or try different confounders",
+                "additional_metrics": {}
+            }
         
-        # Estimate the effect using linear regression
+        # Estimate the effect using linear regression with error handling
         print(f"DEBUG: Estimating causal effect using linear regression...")
-        causal_estimate = causal_model.estimate_effect(
-            identified_estimand,
-            method_name="backdoor.linear_regression",
-            effect_modifiers=[]
-        )
-        
-        print(f"DEBUG: Causal estimate value: {causal_estimate.value}")
-        print(f"DEBUG: Causal estimate summary: {causal_estimate}")
-        print(f"DEBUG: Causal estimate type: {type(causal_estimate)}")
-        
-        # Check if the estimate is None or essentially zero
+        try:
+            causal_estimate = causal_model.estimate_effect(
+                identified_estimand,
+                method_name="backdoor.linear_regression",
+                effect_modifiers=[]
+            )
+            
+            print(f"DEBUG: Causal estimate value: {causal_estimate.value}")
+            print(f"DEBUG: Causal estimate summary: {causal_estimate}")
+            print(f"DEBUG: Causal estimate type: {type(causal_estimate)}")
+            
+        except Exception as e:
+            error_msg = f"Failed to estimate causal effect: {str(e)}"
+            print(f"DEBUG: ERROR: {error_msg}")
+            # Try alternative estimation methods
+            alternative_methods = [
+                "backdoor.propensity_score_matching",
+                "backdoor.propensity_score_stratification",
+                "backdoor.generalized_linear_model"
+            ]
+            
+            causal_estimate = None
+            for alt_method in alternative_methods:
+                try:
+                    print(f"DEBUG: Trying alternative method: {alt_method}")
+                    causal_estimate = causal_model.estimate_effect(
+                        identified_estimand,
+                        method_name=alt_method
+                    )
+                    print(f"DEBUG: Alternative method {alt_method} succeeded")
+                    break
+                except Exception as alt_e:
+                    print(f"DEBUG: Alternative method {alt_method} failed: {str(alt_e)}")
+                    continue
+            
+            if causal_estimate is None:
+                # Return structured error response
+                return {
+                    "estimates": {
+                        "Linear Regression": {
+                            "estimate": 0.0,
+                            "confidence_interval": [None, None],
+                            "p_value": None,
+                            "method": "backdoor.linear_regression",
+                            "error": f"All estimation methods failed. Last error: {str(e)}"
+                        }
+                    },
+                    "consensus_estimate": 0.0,
+                    "robustness": {"status": "failed", "reason": "estimation_error"},
+                    "interpretation": f"Causal effect estimation failed: {str(e)}",
+                    "recommendation": "Check data quality, try different methods, or consider alternative causal discovery approaches",
+                    "additional_metrics": {}
+                }
+          # Check if the estimate is None or essentially zero
         if causal_estimate.value is None:
             print(f"DEBUG: *** WARNING: Causal estimate is None - DoWhy couldn't find a valid estimand ***")
             # Return a zero effect with explanation
@@ -302,43 +465,168 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         elif abs(causal_estimate.value) < 1e-10:
             print(f"DEBUG: *** WARNING: Estimate is extremely small ({causal_estimate.value}), likely indicating no effect or numerical issues ***")
         
-        # Extract confidence intervals and p-value
+        # Extract confidence intervals and p-value with enhanced error handling
+        confidence_interval = [None, None]
+        p_value = None
+        
         try:
-            confidence_interval = causal_estimate.get_confidence_intervals()
-            # Handle nested numpy array format [[lower, upper]]
-            if confidence_interval is not None and len(confidence_interval) > 0:
-                if len(confidence_interval[0]) == 2:  # It's [[lower, upper]]
-                    confidence_interval = [float(confidence_interval[0][0]), float(confidence_interval[0][1])]
+            ci_result = causal_estimate.get_confidence_intervals()
+            print(f"DEBUG: Raw confidence interval result: {ci_result}")
+              # Handle different confidence interval formats
+            if ci_result is not None:
+                if isinstance(ci_result, np.ndarray):
+                    # Handle numpy array format
+                    if ci_result.ndim == 2 and ci_result.shape[1] == 2:
+                        # Format: [[lower, upper]]
+                        confidence_interval = [float(ci_result[0][0]), float(ci_result[0][1])]
+                    elif ci_result.ndim == 1 and len(ci_result) == 2:
+                        # Format: [lower, upper]
+                        confidence_interval = [float(ci_result[0]), float(ci_result[1])]
+                    else:
+                        print(f"DEBUG: Unexpected numpy array shape: {ci_result.shape}")
+                elif isinstance(ci_result, (list, tuple)) and len(ci_result) > 0:
+                    if isinstance(ci_result[0], (list, tuple)) and len(ci_result[0]) == 2:
+                        # Format: [[lower, upper]]
+                        confidence_interval = [float(ci_result[0][0]), float(ci_result[0][1])]
+                    elif len(ci_result) == 2 and isinstance(ci_result[0], (int, float)):
+                        # Format: [lower, upper]
+                        confidence_interval = [float(ci_result[0]), float(ci_result[1])]
+                    else:                        print(f"DEBUG: Unexpected confidence interval format: {ci_result}")
+                elif isinstance(ci_result, dict):
+                    # Handle dictionary format
+                    if 'lower' in ci_result and 'upper' in ci_result:
+                        confidence_interval = [float(ci_result['lower']), float(ci_result['upper'])]
+                    else:
+                        print(f"DEBUG: Unexpected confidence interval dict format: {ci_result}")
                 else:
-                    confidence_interval = [None, None]
-            else:
-                confidence_interval = [None, None]
+                    print(f"DEBUG: Unexpected confidence interval type: {type(ci_result)}")
+            
+            print(f"DEBUG: Processed confidence interval: {confidence_interval}")
+            
         except Exception as e:
+            print(f"DEBUG: Failed to extract confidence intervals: {str(e)}")
             confidence_interval = [None, None]
         
         try:
             # Get p-value using test_stat_significance
             sig_results = causal_estimate.test_stat_significance()
-            if isinstance(sig_results, dict) and 'p_value' in sig_results:
-                p_value = float(sig_results['p_value'])
+            print(f"DEBUG: Significance test results: {sig_results}")
+            
+            if isinstance(sig_results, dict):
+                if 'p_value' in sig_results:
+                    p_val = sig_results['p_value']
+                    # Handle numpy arrays
+                    if isinstance(p_val, np.ndarray):
+                        if p_val.size == 1:
+                            p_value = float(p_val.item())
+                        else:
+                            p_value = float(p_val[0])
+                    else:
+                        p_value = float(p_val)
+                elif 'p' in sig_results:
+                    p_val = sig_results['p']
+                    if isinstance(p_val, np.ndarray):
+                        if p_val.size == 1:
+                            p_value = float(p_val.item())
+                        else:
+                            p_value = float(p_val[0])
+                    else:
+                        p_value = float(p_val)
+                else:
+                    print(f"DEBUG: No p_value found in significance results: {list(sig_results.keys())}")
             else:
-                p_value = None
+                print(f"DEBUG: Unexpected significance test result type: {type(sig_results)}")
+                
+            print(f"DEBUG: Processed p-value: {p_value}")
+            
         except Exception as e:
-            p_value = None        # Package results
-        results = {
-            "Linear Regression": {
-                "estimate": causal_estimate.value,
-                "confidence_interval": confidence_interval,
-                "p_value": p_value,
-                "method": "backdoor.linear_regression"
-            }
-        }
+            print(f"DEBUG: Failed to extract p-value: {str(e)}")
+            p_value = None
         
-        return {
-            "estimates": results,
-            "consensus_estimate": causal_estimate.value,
-            "robustness": {"status": "skipped_for_speed"},
-            "interpretation": _interpret_ate(causal_estimate.value, treatment, outcome),
-            "recommendation": _generate_simple_recommendation(results),
-            "additional_metrics": calculate_simple_metrics(data_to_use, treatment, outcome, causal_estimate.value)
-        }
+        # Validate the final estimate
+        final_estimate = causal_estimate.value
+        if not isinstance(final_estimate, (int, float)):
+            print(f"DEBUG: WARNING: Estimate is not numeric: {type(final_estimate)}, value: {final_estimate}")
+            try:
+                final_estimate = float(final_estimate)
+            except (ValueError, TypeError):
+                print(f"DEBUG: Could not convert estimate to float, using 0.0")
+                final_estimate = 0.0
+        
+        # Check for invalid values
+        if np.isnan(final_estimate) or np.isinf(final_estimate):
+            print(f"DEBUG: WARNING: Estimate is NaN or Inf: {final_estimate}, using 0.0")
+            final_estimate = 0.0        # Package results with additional validation
+        try:
+            method_name = "backdoor.linear_regression"
+            if hasattr(causal_estimate, 'method_name'):
+                method_name = causal_estimate.method_name
+            
+            results = {
+                "Linear Regression": {
+                    "estimate": final_estimate,
+                    "confidence_interval": confidence_interval,
+                    "p_value": p_value,
+                    "method": method_name
+                }
+            }
+            
+            # Calculate additional metrics with error handling
+            additional_metrics = {}
+            try:
+                additional_metrics = calculate_simple_metrics(data_to_use, treatment, outcome, final_estimate)
+            except Exception as e:
+                print(f"DEBUG: Failed to calculate additional metrics: {str(e)}")
+                additional_metrics = {"error": str(e)}
+            
+            # Generate interpretation and recommendation
+            try:
+                interpretation = _interpret_ate(final_estimate, treatment, outcome)
+                recommendation = _generate_simple_recommendation(results)
+            except Exception as e:
+                print(f"DEBUG: Failed to generate interpretation/recommendation: {str(e)}")
+                interpretation = f"Causal effect estimate: {final_estimate}"
+                recommendation = "Unable to generate recommendation due to processing error"
+            
+            # Determine robustness status
+            robustness_status = "completed"
+            if abs(final_estimate) < 1e-10:
+                robustness_status = "low_effect_detected"
+            elif p_value is not None and p_value > 0.05:
+                robustness_status = "not_significant"
+            
+            final_result = {
+                "estimates": results,
+                "consensus_estimate": final_estimate,
+                "robustness": {"status": robustness_status},
+                "interpretation": interpretation,
+                "recommendation": recommendation,
+                "additional_metrics": additional_metrics
+            }
+            
+            print(f"DEBUG: Final result prepared successfully")
+            print(f"DEBUG: Consensus estimate: {final_result['consensus_estimate']}")
+            print(f"DEBUG: ================ END CAUSAL INFERENCE DEBUG ================")
+            
+            return final_result
+            
+        except Exception as e:
+            error_msg = f"Failed to package final results: {str(e)}"
+            print(f"DEBUG: ERROR: {error_msg}")
+            # Return basic error response
+            return {
+                "estimates": {
+                    "Linear Regression": {
+                        "estimate": 0.0,
+                        "confidence_interval": [None, None],
+                        "p_value": None,
+                        "method": "backdoor.linear_regression",
+                        "error": error_msg
+                    }
+                },
+                "consensus_estimate": 0.0,
+                "robustness": {"status": "failed", "reason": "packaging_error"},
+                "interpretation": f"Result packaging failed: {str(e)}",
+                "recommendation": "Contact support - internal processing error",
+                "additional_metrics": {}
+            }

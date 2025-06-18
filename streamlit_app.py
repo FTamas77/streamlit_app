@@ -1,7 +1,7 @@
 # CRITICAL UNDERSTANDING: This entire script runs from TOP to BOTTOM on:
 # 1. ✅ User opens the page (first visit)
 # 2. ✅ User clicks ANY button 
-# 3. ✅ User uploads a file
+# 3.    st.markdown("### 🔬 **Core Methodology**")✅ User uploads a file
 # 4. ✅ User types in text area
 # 5. ✅ User selects from dropdown
 # 6. ✅ User checks a checkbox
@@ -142,21 +142,42 @@ with st.sidebar:
         "OpenAI API Key", 
         type="password", 
         help="Required for LLM-guided domain constraints and insights",
-        value=st.session_state.get('openai_api_key', '')
-    )
+        value=st.session_state.get('openai_api_key', '')    )
     
     if api_key:
         st.session_state['openai_api_key'] = api_key
         st.success("✅ API Key saved for this session")
-    
-    st.markdown("### 📋 Analysis Steps")
+
+# Sidebar: Core Methodology
+with st.sidebar:
+    st.markdown("### � **Core Methodology**")
     st.markdown("""
-    1. Upload Excel/CSV file
-    2. Configure domain constraints
-    3. Run causal discovery
-    4. Calculate treatment effects
-    5. Get AI explanations
+    **Primary Components:**
+    
+    🔍 **1. Causal Discovery**
+    - Identify causal relationships
+    - Determine causal direction
+    - Build causal graph structure
+    
+    🎯 **2. Causal Inference** 
+    - Estimate treatment effects
+    - Calculate confidence intervals
+    - Validate causal assumptions
+    
+    ---
+    **Supporting Analysis:**
+    
+    📊 **Variable Relationships**
+    - Correlation analysis
+    - Data exploration helper
+    
+    🤖 **AI Insights**    - Interpretation assistance
+    - Policy recommendations
     """)
+    
+    st.markdown("---")
+    st.markdown("**🧪 Scientific Approach:**")
+    st.markdown("DirectLiNGAM → DoWhy → AI Analysis")
 
 # Main interface with professional hero section
 st.markdown("""
@@ -341,52 +362,28 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                 st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
         else:
             st.session_state['causal_discovery_completed'] = False
-            st.error("❌ Causal discovery failed")
-    
-    # Show causal discovery results
+            st.error("❌ Causal discovery failed")    # Show causal discovery results
     if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
-        col1, col2 = st.columns([2, 1])
+        st.subheader("📈 Discovered Causal Graph")
         
-        with col1:
-            st.subheader("📈 Discovered Causal Graph")
-            # Use encoded columns from discovery (these match the adjacency matrix dimensions)
-            if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
-                graph_columns = analyzer.discovery.encoded_columns
-                st.info(f"📊 Showing relationships between {len(graph_columns)} variables (categorical variables encoded as numeric)")
-                
-                # Add explanation
-                st.markdown("""
-                **How to read this graph:**
-                - 🔵 **Nodes** = Variables in your dataset (categorical variables shown with "_Code" suffix)
-                - ➡️ **Arrows** = Causal relationships (A → B means A causes B)
-                - 🎨 **Colors** = Relationship strength (Red=Strong, Orange=Medium, Blue=Weak)
-                """)
-                
-                # Show encoding information
-                if hasattr(analyzer.discovery, 'column_mapping') and analyzer.discovery.column_mapping:
-                    with st.expander("🔢 Variable Encoding Information"):
-                        for encoded_col, mapping_info in analyzer.discovery.column_mapping.items():
-                            original_col = mapping_info['original_column']
-                            encoding = mapping_info['encoding']
-                            st.write(f"**{encoded_col}** (from {original_col}):")
-                            for original_val, code in encoding.items():
-                                st.write(f"  • {original_val} → {code}")
-            else:
-                # Fallback to original columns if encoded columns not available
-                graph_columns = list(analyzer.data.columns)
+        # Use encoded columns from discovery (these match the adjacency matrix dimensions)
+        if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
+            graph_columns = analyzer.discovery.encoded_columns
+            st.info(f"📊 Showing relationships between {len(graph_columns)} variables")
             
-            show_causal_graph(analyzer.adjacency_matrix, graph_columns, 
-                             getattr(analyzer.discovery, 'column_mapping', None))
+            # Add simplified explanation
+            st.markdown("""
+            **How to read this graph:**
+            - 🔵 **Nodes** = Variables in your dataset
+            - ➡️ **Arrows** = Causal relationships (A → B means A causes B)
+            - 🎨 **Node Colors** = Variable role (Red=Outcome, Teal=Cause, Blue=Mediator)
+            - 🎛️ **Customize** = Use the controls below to adjust layout and hide relationships""")
+        else:
+            # Fallback to original columns if encoded columns not available
+            graph_columns = list(analyzer.data.columns)
         
-        with col2:
-            st.subheader("📊 Adjacency Matrix")
-            # Use the same columns that match the adjacency matrix dimensions
-            adj_df = pd.DataFrame(
-                analyzer.adjacency_matrix, 
-                index=graph_columns, 
-                columns=graph_columns
-            )
-            st.dataframe(adj_df.round(3))
+        show_causal_graph(analyzer.adjacency_matrix, graph_columns, 
+                         getattr(analyzer.discovery, 'column_mapping', None))
     
     # Step 4: Variable Relationship Analysis
     st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
@@ -492,15 +489,19 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         
         with col2:
             st.info(f"**Interpretation:** {ate_results['interpretation']}")
-        
-        # Detailed results
+          # Detailed results
         st.subheader("🔍 Detailed Results by Method")
-        show_results_table(ate_results)        # Interactive Policy Scenarios
-        st.markdown('<div class="step-header"><h2>🎮 Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)
-        show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, analyzer)
-        
-        # AI Explanation - IMPROVED INTEGRATION
-        st.markdown('<div class="step-header"><h2>🧠 AI-Powered Insights</h2></div>', unsafe_allow_html=True)
+        show_results_table(ate_results)
+          # Step 6: Interactive Policy Explorer - only if we have a meaningful effect
+        if abs(ate_results['consensus_estimate']) > 0.01:  # Only show if we have a meaningful effect
+            st.markdown('<div class="step-header"><h2>🎮 Step 6: Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)
+            st.info("💡 **Explore Policy Scenarios:** Use the estimated causal effect to simulate different intervention strategies.")
+            show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, analyzer)
+        else:
+            st.markdown('<div class="step-header"><h2>🎮 Step 6: Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)
+            st.warning("⚠️ **Policy Explorer unavailable:** The estimated causal effect is too small (≈0) to provide meaningful scenario predictions.")
+          # Step 7: AI-Powered Insights
+        st.markdown('<div class="step-header"><h2>🧠 Step 7: AI-Powered Insights</h2></div>', unsafe_allow_html=True)
         
         # Show button only if API key is available
         if st.session_state.get('openai_api_key'):
