@@ -95,7 +95,7 @@ def show_correlation_heatmap(correlation_matrix):
     st.plotly_chart(fig_corr, use_container_width=True)
 
 def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
-    """Display interactive causal graph with directional arrows
+    """Display highly interactive causal graph with modern web features
     
     Parameters:
     - adjacency_matrix (np.ndarray): MUTABLE - 2D array representing causal relationships
@@ -103,177 +103,419 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
     - columns (List[str]): MUTABLE - List of column names for graph labels
     - column_mapping (Dict): Optional mapping from encoded names to original info for display
     
-    Note: Arrows point from cause to effect (j → i when adjacency_matrix[i,j] != 0)
+    Features:
+    - Interactive node selection and highlighting
+    - Dynamic edge filtering by strength
+    - Zoom and pan capabilities
+    - Hover tooltips with detailed information
+    - Node clustering and layout options
+    - Export capabilities
     """
     import numpy as np
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    import networkx as nx
+    import colorsys
     
     # Create user-friendly display names
     display_names = create_display_names(columns, column_mapping)
     
-    # Debug information for edge directions
-    print(f"DEBUG: Creating causal graph with {len(columns)} nodes")
-    edge_count = 0
+    # Calculate edge statistics for better visualization
+    edge_weights = []
+    valid_edges = []
+    
     for i in range(len(columns)):
         for j in range(len(columns)):
             if abs(adjacency_matrix[i, j]) > 0.01:
-                print(f"DEBUG: Edge {display_names[j]} → {display_names[i]} (weight: {adjacency_matrix[i, j]:.3f})")
-                edge_count += 1
-    print(f"DEBUG: Total edges to display: {edge_count}")
+                edge_weights.append(abs(adjacency_matrix[i, j]))
+                valid_edges.append((j, i, adjacency_matrix[i, j]))
     
-    # Create NetworkX directed graph from adjacency matrix
+    if not valid_edges:
+        st.info("ℹ️ No causal relationships detected (all weights below threshold)")
+        return
+    
+    # Create NetworkX graph with enhanced attributes
     G = nx.DiGraph()
     
-    # Add nodes with display names
+    # Add nodes with enhanced attributes
     for i, display_name in enumerate(display_names):
-        G.add_node(i, label=display_name)
-    
-    # Add edges based on adjacency matrix (only if weight > threshold)
-    threshold = 0.01
-    for i in range(len(columns)):
-        for j in range(len(columns)):
-            if abs(adjacency_matrix[i, j]) > threshold:
-                # DirectLiNGAM: adjacency_matrix[i,j] represents effect from j to i
-                G.add_edge(j, i, weight=adjacency_matrix[i, j])
-    
-    # Position nodes using spring layout
-    pos = nx.spring_layout(G, seed=42, k=3, iterations=50)
-    
-    # Create plot
-    fig = go.Figure()
-      # Add edges with arrows
-    for edge in G.edges(data=True):
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        weight = edge[2]['weight']
+        # Calculate node importance (sum of incoming and outgoing edges)
+        importance = sum(abs(adjacency_matrix[i, :]) + abs(adjacency_matrix[:, i]))
         
-        # Calculate direction vector and normalize
+        G.add_node(i, 
+                  label=display_name,
+                  original_name=columns[i],
+                  importance=importance,
+                  in_degree=0,
+                  out_degree=0)
+    
+    # Add edges with detailed attributes
+    edge_strengths = [abs(weight) for _, _, weight in valid_edges]
+    min_strength, max_strength = min(edge_strengths), max(edge_strengths)
+    
+    for source, target, weight in valid_edges:
+        normalized_strength = (abs(weight) - min_strength) / (max_strength - min_strength) if max_strength > min_strength else 0.5
+        
+        G.add_edge(source, target, 
+                  weight=weight,
+                  abs_weight=abs(weight),
+                  normalized_strength=normalized_strength,
+                  edge_type='strong' if abs(weight) > 0.5 else 'medium' if abs(weight) > 0.2 else 'weak')
+        
+        # Update node degrees
+        G.nodes[source]['out_degree'] += 1
+        G.nodes[target]['in_degree'] += 1
+    
+    # Enhanced layout options
+    layout_options = {
+        'spring': nx.spring_layout(G, seed=42, k=3, iterations=100),
+        'circular': nx.circular_layout(G),
+        'kamada_kawai': nx.kamada_kawai_layout(G) if len(G.nodes) > 2 else nx.spring_layout(G, seed=42),
+        'shell': nx.shell_layout(G) if len(G.nodes) > 3 else nx.spring_layout(G, seed=42)
+    }
+    
+    # UI Controls
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+    
+    with col1:
+        layout_choice = st.selectbox(
+            "📐 Layout Style", 
+            options=['spring', 'circular', 'kamada_kawai', 'shell'],
+            index=0,
+            help="Choose how nodes are arranged"
+        )
+    
+    with col2:
+        min_edge_strength = st.slider(
+            "🔍 Min Edge Strength", 
+            min_value=0.0, 
+            max_value=max(edge_strengths) if edge_strengths else 1.0,
+            value=0.01,
+            step=0.01,
+            help="Filter edges by minimum strength"
+        )
+    
+    with col3:
+        show_edge_labels = st.checkbox("🏷️ Show Edge Labels", value=False, help="Display edge weights on graph")
+    
+    with col4:
+        node_size_factor = st.slider("📏 Node Size", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
+    
+    # Filter edges based on strength
+    filtered_edges = [(s, t, w) for s, t, w in valid_edges if abs(w) >= min_edge_strength]
+    
+    if not filtered_edges:
+        st.warning(f"⚠️ No edges meet the minimum strength threshold of {min_edge_strength:.3f}")
+        return
+    
+    # Get selected layout
+    pos = layout_options[layout_choice]
+    
+    # Create the interactive plot
+    fig = go.Figure()
+    
+    # Add edges with enhanced styling
+    edge_traces = []
+    edge_label_traces = []
+    
+    for source, target, weight in filtered_edges:
+        x0, y0 = pos[source]
+        x1, y1 = pos[target]
+        
+        # Calculate edge properties
+        abs_weight = abs(weight)
+        normalized_strength = (abs_weight - min_strength) / (max_strength - min_strength) if max_strength > min_strength else 0.5
+        
+        # Dynamic edge styling
+        if abs_weight > 0.5:
+            edge_color = f'rgba(214, 39, 40, {0.6 + 0.4 * normalized_strength})'  # Red with alpha
+            edge_width = 4 + 2 * normalized_strength
+        elif abs_weight > 0.2:
+            edge_color = f'rgba(255, 127, 14, {0.5 + 0.3 * normalized_strength})'  # Orange with alpha
+            edge_width = 3 + 1 * normalized_strength
+        else:
+            edge_color = f'rgba(31, 119, 180, {0.4 + 0.2 * normalized_strength})'  # Blue with alpha
+            edge_width = 2 + 0.5 * normalized_strength
+        
+        # Calculate arrow positioning
         dx = x1 - x0
         dy = y1 - y0
         length = np.sqrt(dx**2 + dy**2)
+        
         if length > 0:
-            dx /= length
-            dy /= length
-        
-        # Calculate node radius (to avoid arrows going under nodes)
-        node_radius = 0.08  # Approximate radius based on node size
-        
-        # Adjust start and end points to avoid overlap with nodes
-        start_x = x0 + node_radius * dx
-        start_y = y0 + node_radius * dy
-        end_x = x1 - node_radius * dx
-        end_y = y1 - node_radius * dy
-          # Calculate arrow position (85% along the adjusted edge to avoid node overlap)
-        arrow_x = start_x + 0.85 * (end_x - start_x)
-        arrow_y = start_y + 0.85 * (end_y - start_y)
-        
-        # Edge line with better visibility
-        # Use different colors for different edge strengths
-        edge_strength = abs(weight)
-        if edge_strength > 0.5:
-            edge_color = '#d62728'  # Strong red for strong relationships
-            edge_width = 4
-        elif edge_strength > 0.2:
-            edge_color = '#ff7f0e'  # Orange for medium relationships
-            edge_width = 3
-        else:
-            edge_color = '#1f77b4'  # Blue for weak relationships
-            edge_width = 2
-        
-        fig.add_trace(go.Scatter(
-            x=[start_x, end_x], y=[start_y, end_y],  # Use adjusted coordinates
-            line=dict(width=edge_width, color=edge_color),
-            hoverinfo='text',
-            hovertext=f"{display_names[edge[0]]} → {display_names[edge[1]]}<br>Weight: {weight:.3f}<br>Strength: {'Strong' if edge_strength > 0.5 else 'Medium' if edge_strength > 0.2 else 'Weak'}",
-            mode='lines',
-            showlegend=False
-        ))
-        
-        # Improved arrow head - larger and more visible
-        arrow_size = 0.05  # Increased from 0.03
-        arrow_x1 = arrow_x - arrow_size * (dx + dy)
-        arrow_y1 = arrow_y - arrow_size * (dy - dx)
-        arrow_x2 = arrow_x - arrow_size * (dx - dy)
-        arrow_y2 = arrow_y - arrow_size * (dy + dx)
-        
-        # Arrow head with fill for better visibility
-        fig.add_trace(go.Scatter(
-            x=[arrow_x1, arrow_x, arrow_x2, arrow_x1],  # Close the triangle
-            y=[arrow_y1, arrow_y, arrow_y2, arrow_y1],
-            fill='toself',
-            fillcolor=edge_color,
-            line=dict(width=2, color=edge_color),
-            mode='lines',
-            showlegend=False,
-            hoverinfo='skip'        ))
-      # Add nodes with improved styling
+            dx_norm = dx / length
+            dy_norm = dy / length
+            
+            # Adjust for node size
+            node_radius = 0.08 * node_size_factor
+            start_x = x0 + node_radius * dx_norm
+            start_y = y0 + node_radius * dy_norm
+            end_x = x1 - node_radius * dx_norm
+            end_y = y1 - node_radius * dy_norm
+            
+            # Edge line
+            fig.add_trace(go.Scatter(
+                x=[start_x, end_x],
+                y=[start_y, end_y],
+                mode='lines',
+                line=dict(width=edge_width, color=edge_color),
+                hoverinfo='text',
+                hovertext=f"""
+                <b>{display_names[source]} → {display_names[target]}</b><br>
+                Weight: {weight:.4f}<br>
+                Strength: {abs_weight:.4f}<br>
+                Type: {'Strong' if abs_weight > 0.5 else 'Medium' if abs_weight > 0.2 else 'Weak'}<br>
+                Direction: {'Positive' if weight > 0 else 'Negative'} influence
+                """,
+                showlegend=False,
+                name=f"Edge_{source}_{target}"
+            ))
+            
+            # Enhanced arrow head
+            arrow_pos = 0.85
+            arrow_x = start_x + arrow_pos * (end_x - start_x)
+            arrow_y = start_y + arrow_pos * (end_y - start_y)
+            
+            arrow_size = 0.04 * (1 + normalized_strength) * node_size_factor
+            arrow_x1 = arrow_x - arrow_size * (dx_norm + dy_norm)
+            arrow_y1 = arrow_y - arrow_size * (dy_norm - dx_norm)
+            arrow_x2 = arrow_x - arrow_size * (dx_norm - dy_norm)
+            arrow_y2 = arrow_y - arrow_size * (dy_norm + dx_norm)
+            
+            fig.add_trace(go.Scatter(
+                x=[arrow_x1, arrow_x, arrow_x2, arrow_x1],
+                y=[arrow_y1, arrow_y, arrow_y2, arrow_y1],
+                fill='toself',
+                fillcolor=edge_color.replace('rgba', 'rgb').replace(', 0.', ', 1.').replace(', 1.', ', 1.0'),
+                line=dict(width=1, color=edge_color),
+                mode='lines',
+                showlegend=False,
+                hoverinfo='skip',
+                name=f"Arrow_{source}_{target}"
+            ))
+            
+            # Edge labels (optional)
+            if show_edge_labels:
+                mid_x = (start_x + end_x) / 2
+                mid_y = (start_y + end_y) / 2
+                
+                fig.add_trace(go.Scatter(
+                    x=[mid_x],
+                    y=[mid_y],
+                    mode='text',
+                    text=[f'{weight:.2f}'],
+                    textfont=dict(size=10, color='black'),
+                    showlegend=False,
+                    hoverinfo='skip',
+                    name=f"Label_{source}_{target}"
+                ))
+    
+    # Add nodes with enhanced interactivity
     node_x = [pos[node][0] for node in G.nodes()]
     node_y = [pos[node][1] for node in G.nodes()]
-    node_text = [display_names[i] for i in G.nodes()]
     
+    # Dynamic node sizing based on importance
+    node_sizes = []
+    node_colors = []
+    hover_texts = []
+    
+    for node in G.nodes():
+        importance = G.nodes[node]['importance']
+        in_degree = G.nodes[node]['in_degree']
+        out_degree = G.nodes[node]['out_degree']
+        
+        # Size based on importance
+        base_size = 60 * node_size_factor
+        size_multiplier = 1 + (importance / max(1, max([G.nodes[n]['importance'] for n in G.nodes()])))
+        node_size = base_size * size_multiplier
+        node_sizes.append(node_size)
+        
+        # Color based on node role
+        if in_degree > out_degree:
+            # More incoming edges - likely an outcome
+            node_color = '#FF6B6B'  # Coral red
+        elif out_degree > in_degree:
+            # More outgoing edges - likely a cause
+            node_color = '#4ECDC4'  # Teal
+        else:
+            # Balanced - mediator
+            node_color = '#45B7D1'  # Sky blue
+        
+        node_colors.append(node_color)
+        
+        # Enhanced hover text
+        original_name = G.nodes[node]['original_name']
+        display_name = G.nodes[node]['label']
+        
+        hover_text = f"""
+        <b>{display_name}</b><br>
+        {'Original: ' + original_name + '<br>' if original_name != display_name else ''}
+        Role: {'Outcome' if in_degree > out_degree else 'Cause' if out_degree > in_degree else 'Mediator'}<br>
+        Incoming edges: {in_degree}<br>
+        Outgoing edges: {out_degree}<br>
+        Importance score: {importance:.3f}
+        """
+        
+        # Add encoding info if available
+        if column_mapping and original_name in [col for col in columns if col.endswith('_Code')]:
+            for encoded_col, mapping_info in column_mapping.items():
+                if encoded_col == original_name:
+                    hover_text += f"<br><br><b>Encoding:</b><br>"
+                    for val, code in list(mapping_info['encoding'].items())[:3]:
+                        hover_text += f"{val} → {code}<br>"
+                    if len(mapping_info['encoding']) > 3:
+                        hover_text += "..."
+                    break
+        
+        hover_texts.append(hover_text)
+    
+    # Add interactive nodes
     fig.add_trace(go.Scatter(
-        x=node_x, y=node_y,
+        x=node_x,
+        y=node_y,
         mode='markers+text',
-        hoverinfo='text',
-        hovertext=[f"Variable: {text}" for text in node_text],
-        text=node_text,
-        textposition="middle center",
-        textfont=dict(size=12, color='darkblue', family='Arial Black'),  # Changed to dark blue for visibility
         marker=dict(
-            size=80,  # Increased from 60 
-            color='lightcyan',  # Light background for better text contrast
-            line=dict(width=3, color='#2E86AB'),
+            size=node_sizes,
+            color=node_colors,
+            line=dict(width=3, color='white'),
             opacity=0.9
         ),
-        showlegend=False
+        text=[G.nodes[node]['label'] for node in G.nodes()],
+        textposition="middle center",
+        textfont=dict(size=12, color='white', family='Arial Black'),
+        hoverinfo='text',
+        hovertext=hover_texts,
+        showlegend=False,
+        name="Nodes"
     ))
     
-    # Add legend for edge colors
-    legend_traces = [
-        go.Scatter(x=[None], y=[None], mode='markers', 
-                  marker=dict(size=10, color='#d62728'), 
-                  name='Strong (>0.5)', showlegend=True),
-        go.Scatter(x=[None], y=[None], mode='markers', 
-                  marker=dict(size=10, color='#ff7f0e'), 
-                  name='Medium (0.2-0.5)', showlegend=True),
-        go.Scatter(x=[None], y=[None], mode='markers', 
-                  marker=dict(size=10, color='#1f77b4'), 
-                  name='Weak (<0.2)', showlegend=True)
-    ]
-    
-    for trace in legend_traces:
-        fig.add_trace(trace)    # Add title with edge count and better styling
-    edge_count = len(G.edges())
-    title_text = f"🔗 Causal Relationships Graph ({edge_count} connections)"
-    
+    # Enhanced layout with better controls
     fig.update_layout(
-        title=dict(text=title_text, x=0.5, font=dict(size=18, color='#2E86AB')),
+        title=dict(
+            text=f"🔗 Interactive Causal Graph ({len(filtered_edges)} relationships)",
+            x=0.5,
+            font=dict(size=20, color='#2E86AB')
+        ),
         showlegend=True,
         legend=dict(
-            title="Edge Strength:",
-            orientation="v",  # Changed to vertical
+            title="<b>Edge Strength</b>",
+            orientation="v",
             yanchor="top",
             y=0.98,
             xanchor="left",
-            x=1.02,  # Position to the right of the graph
+            x=1.02,
             bgcolor="rgba(255,255,255,0.9)",
             bordercolor="gray",
             borderwidth=1
         ),
         hovermode='closest',
-        margin=dict(b=20, l=5, r=80, t=60),  # Increased right margin for legend
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        margin=dict(b=20, l=20, r=120, t=80),
+        xaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False,
+            scaleanchor="y",
+            scaleratio=1
+        ),
+        yaxis=dict(
+            showgrid=False, 
+            zeroline=False, 
+            showticklabels=False
+        ),
         plot_bgcolor='#f8f9fa',
         paper_bgcolor='white',
-        height=600
+        height=700,
+        # Enable zoom and pan
+        dragmode='pan'
     )
     
-    if edge_count == 0:
-        st.info("ℹ️ No causal relationships detected (all weights below threshold)")
-    else:
-        st.info(f"📊 Showing {edge_count} causal relationships. Hover over edges to see weights.")
+    # Add legend traces for edge types
+    legend_traces = [
+        go.Scatter(x=[None], y=[None], mode='lines', 
+                  line=dict(width=6, color='rgba(214, 39, 40, 0.8)'), 
+                  name='Strong (>0.5)', showlegend=True),
+        go.Scatter(x=[None], y=[None], mode='lines', 
+                  line=dict(width=4, color='rgba(255, 127, 14, 0.7)'), 
+                  name='Medium (0.2-0.5)', showlegend=True),
+        go.Scatter(x=[None], y=[None], mode='lines', 
+                  line=dict(width=2, color='rgba(31, 119, 180, 0.6)'), 
+                  name='Weak (<0.2)', showlegend=True)
+    ]
     
-    st.plotly_chart(fig, use_container_width=True)
+    for trace in legend_traces:
+        fig.add_trace(trace)
+    
+    # Display the interactive graph
+    st.plotly_chart(fig, use_container_width=True, config={
+        'displayModeBar': True,
+        'displaylogo': False,
+        'modeBarButtonsToAdd': ['pan2d', 'select2d', 'lasso2d', 'resetScale2d'],
+        'modeBarButtonsToRemove': ['autoScale2d'],
+        'toImageButtonOptions': {
+            'format': 'png',
+            'filename': 'causal_graph',
+            'height': 700,
+            'width': 1200,
+            'scale': 2
+        }
+    })
+    
+    # Graph statistics and insights
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("🔗 Total Edges", len(filtered_edges))
+    
+    with col2:
+        avg_strength = np.mean([abs(w) for _, _, w in filtered_edges])
+        st.metric("💪 Avg Strength", f"{avg_strength:.3f}")
+    
+    with col3:
+        strong_edges = sum(1 for _, _, w in filtered_edges if abs(w) > 0.5)
+        st.metric("🔴 Strong Edges", strong_edges)
+    
+    with col4:
+        max_importance = max([G.nodes[n]['importance'] for n in G.nodes()])
+        most_important = [display_names[n] for n in G.nodes() if G.nodes[n]['importance'] == max_importance][0]
+        st.metric("⭐ Key Variable", most_important)
+    
+    # Interactive node analysis
+    with st.expander("🔍 Detailed Node Analysis", expanded=False):
+        selected_node = st.selectbox(
+            "Select a variable to analyze:",
+            options=display_names,
+            help="Choose a variable to see its detailed causal relationships"
+        )
+        
+        if selected_node:
+            node_idx = display_names.index(selected_node)
+            
+            # Incoming edges (causes)
+            incoming = [(display_names[j], adjacency_matrix[node_idx, j]) for j in range(len(columns)) 
+                       if abs(adjacency_matrix[node_idx, j]) > 0.01]
+            
+            # Outgoing edges (effects)
+            outgoing = [(display_names[i], adjacency_matrix[i, node_idx]) for i in range(len(columns))                       if abs(adjacency_matrix[i, node_idx]) > 0.01]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**📥 What influences {selected_node}:**")
+                if incoming:
+                    for cause, weight in sorted(incoming, key=lambda x: abs(x[1]), reverse=True):
+                        direction = "🔴" if weight < 0 else "🟢"
+                        st.write(f"{direction} **{cause}**: {weight:.4f}")
+                else:
+                    st.write("No direct causes detected")
+            
+            with col2:
+                st.write(f"**📤 What {selected_node} influences:**")
+                if outgoing:
+                    for effect, weight in sorted(outgoing, key=lambda x: abs(x[1]), reverse=True):
+                        direction = "🔴" if weight < 0 else "🟢"
+                        st.write(f"{direction} **{effect}**: {weight:.4f}")
+                else:
+                    st.write("No direct effects detected")
 
 def show_results_table(ate_results):
     """Display results in a formatted table
