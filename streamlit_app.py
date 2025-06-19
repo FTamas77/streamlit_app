@@ -194,19 +194,22 @@ st.markdown("""
 # Step 1: Data Upload
 st.markdown('<div class="step-header"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
 
-# Create two columns for upload options
-col1, col2 = st.columns([1, 1])
+# Create tabs for better organization
+tab1, tab2 = st.tabs(["📤 Upload Your Own Data", "📊 Use Sample Dataset"])
 
-with col1:
-    st.markdown("### 📤 Upload Your Own Data")
+with tab1:
+    st.markdown("Upload your Excel or CSV file to begin causal analysis:")
     uploaded_file = st.file_uploader(
-        "Upload your Excel or CSV file",
+        "Choose a file",
         type=['xlsx', 'csv'],
-        help="Ensure your data has clean column names and numeric values."
+        help="Ensure your data has clean column names and numeric values for best results."
     )
+    
+    if uploaded_file:
+        st.info(f"📄 **File selected:** {uploaded_file.name}")
 
-with col2:
-    st.markdown("### 📊 Use Sample Dataset")
+with tab2:
+    st.markdown("Explore causal relationships with our pre-loaded demonstration datasets:")
     
     # Get list of sample data files
     sample_data_dir = os.path.join(os.path.dirname(__file__), 'sample_data')
@@ -221,16 +224,23 @@ with col2:
                 sample_files.append(file)
     
     if sample_files:
-        selected_sample = st.selectbox(
-            "Choose a sample dataset:",
-            options=['None'] + sample_files,
-            format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
-            help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis."
-        )
+        # Create columns for better layout
+        col_select, col_button = st.columns([2, 1])
         
-        if selected_sample != 'None':
-            sample_file_path = os.path.join(sample_data_dir, selected_sample)
-            if st.button("Load Sample Dataset", key="load_sample"):
+        with col_select:
+            selected_sample = st.selectbox(
+                "Choose a sample dataset:",
+                options=['None'] + sample_files,
+                format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
+                help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis."
+            )
+        
+        with col_button:
+            st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+            load_button_disabled = selected_sample == 'None'
+            
+            if st.button("🚀 Load Dataset", key="load_sample", disabled=load_button_disabled, use_container_width=True):
+                sample_file_path = os.path.join(sample_data_dir, selected_sample)
                 try:
                     # Load the sample data
                     sample_data = pd.read_csv(sample_file_path)
@@ -245,6 +255,19 @@ with col2:
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error loading sample dataset: {str(e)}")
+        
+        # Show preview of selected dataset
+        if selected_sample != 'None':
+            with st.expander("📖 Dataset Preview", expanded=False):
+                try:
+                    sample_file_path = os.path.join(sample_data_dir, selected_sample)
+                    preview_data = pd.read_csv(sample_file_path)
+                    st.markdown(f"**Dataset:** {sample_descriptions.get(selected_sample, selected_sample)}")
+                    st.markdown(f"**Size:** {preview_data.shape[0]} rows × {preview_data.shape[1]} columns")
+                    st.dataframe(preview_data.head(3), use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not preview dataset: {str(e)}")
+                    
     else:
         st.info("No sample datasets found. Run `python create_sample_data.py` to generate sample datasets.")
 

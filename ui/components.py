@@ -440,7 +440,7 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
         st.metric("🔗 Total Relationships", len(filtered_edges))
     
     with col2:
-        st.metric("� Variables", len(G.nodes()))
+        st.metric("Variables", len(G.nodes()))
     
     # Edge Status Information
     if st.session_state.get('disabled_edges'):
