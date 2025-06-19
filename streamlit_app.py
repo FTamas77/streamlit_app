@@ -114,24 +114,26 @@ def get_analyzer():
 
 analyzer = get_analyzer()
 
-# Simple session state initialization - much cleaner than state machine
-if 'causal_discovery_completed' not in st.session_state:
-    st.session_state['causal_discovery_completed'] = False
+# Initialize session state with default values
+def init_session_state():
+    """Initialize session state variables with defaults"""
+    defaults = {
+        'causal_discovery_completed': False,
+        'data_loaded': False,
+        'selected_treatment': None,
+        'selected_outcome': None,
+        'ate_results': None,
+        'domain_constraints_generated': False,
+        'constraints_data': None,
+        'openai_api_key': ''
+    }
+    
+    for key, default_value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
 
-if 'selected_treatment' not in st.session_state:
-    st.session_state['selected_treatment'] = None
-
-if 'selected_outcome' not in st.session_state:
-    st.session_state['selected_outcome'] = None
-
-if 'ate_results' not in st.session_state:
-    st.session_state['ate_results'] = None
-
-if 'domain_constraints_generated' not in st.session_state:
-    st.session_state['domain_constraints_generated'] = False
-
-if 'constraints_data' not in st.session_state:
-    st.session_state['constraints_data'] = None
+# Initialize session state
+init_session_state()
 
 # Sidebar
 with st.sidebar:
@@ -385,13 +387,15 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                 st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
         else:
             st.session_state['causal_discovery_completed'] = False
-            st.error("❌ Causal discovery failed")    # Show causal discovery results
+            st.error("❌ Causal discovery failed")
+    
+    # Show causal discovery results
     if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
         st.subheader("📈 Discovered Causal Graph")
         
-        # Use encoded columns from discovery (these match the adjacency matrix dimensions)
-        if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
-            graph_columns = analyzer.discovery.encoded_columns
+        # Use columns from discovery (these match the adjacency matrix dimensions)
+        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
+            graph_columns = analyzer.discovery.columns
             st.info(f"📊 Showing relationships between {len(graph_columns)} variables")
             
             # Add simplified explanation
@@ -402,11 +406,10 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             - 🎨 **Node Colors** = Variable role (Red=Outcome, Teal=Cause, Blue=Mediator)
             - 🎛️ **Customize** = Use the controls below to adjust layout and hide relationships""")
         else:
-            # Fallback to original columns if encoded columns not available
+            # Fallback to original columns if columns not available
             graph_columns = list(analyzer.data.columns)
         
-        show_causal_graph(analyzer.adjacency_matrix, graph_columns, 
-                         getattr(analyzer.discovery, 'column_mapping', None))
+        show_causal_graph(analyzer.adjacency_matrix, graph_columns)
     
     # Step 4: Variable Relationship Analysis
     st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
@@ -441,37 +444,41 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                             st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
                     else:
                         st.write("No strong correlations (>0.5) found")
+      # Step 5: Causal Inference Analysis
+    st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
     
-    # Step 5: Causal Inference Analysis
-    st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)    
     if analyzer.data is not None and not analyzer.data.empty:
-        # Get numeric columns for causal analysis
+        # Get columns for causal analysis
         numeric_columns = analyzer.get_numeric_columns()
         categorical_columns = analyzer.get_categorical_columns()
+        all_columns = numeric_columns + categorical_columns
         
-        if len(numeric_columns) < 2:
-            st.error("❌ Need at least 2 numeric variables for causal analysis. Please ensure your data contains numeric columns.")
-            if categorical_columns:
-                st.warning(f"📊 Note: {len(categorical_columns)} categorical variables were found but cannot be used for causal inference: {', '.join(categorical_columns[:5])}{'...' if len(categorical_columns) > 5 else ''}")
+        if len(all_columns) < 2:
+            st.error("❌ Need at least 2 variables for causal analysis. Please ensure your data contains numeric or categorical columns.")
         else:
             # Show user which variables are available
             if categorical_columns:
-                st.info(f"ℹ️ **Variable Selection:** Using {len(numeric_columns)} numeric variables for causal analysis. {len(categorical_columns)} categorical variables are excluded from treatment/outcome selection.")
+                st.info(f"ℹ️ **Variable Selection:** {len(numeric_columns)} numeric + {len(categorical_columns)} categorical variables available. Categorical treatments use specialized policy scenarios.")
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 treatment_var = st.selectbox(
                     "Treatment Variable (Cause)",
-                    options=numeric_columns,
-                    key="treatment_select",
-                    help="Select a numeric variable that represents the intervention or treatment"
+                    options=all_columns,
+                    key="treatment_select",                    help="Select a variable that represents the intervention or treatment (both numeric and categorical treatments are supported)"
                 )
             
             with col2:
+                # Outcome should be numeric for meaningful measurement
+                available_outcomes = [col for col in numeric_columns if col != treatment_var]
+                if not available_outcomes:
+                    st.error("❌ No numeric variables available for outcome. At least one numeric variable is required as the outcome.")
+                    st.stop()
+                    
                 outcome_var = st.selectbox(
                     "Outcome Variable (Effect)", 
-                    options=[col for col in numeric_columns if col != treatment_var],
+                    options=available_outcomes,
                     key="outcome_select",
                     help="Select a numeric variable that represents the outcome you want to measure"
                 )
@@ -479,10 +486,10 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             with col3:
                 confounders = st.multiselect(
                     "Confounding Variables",
-                    options=[col for col in numeric_columns if col not in [treatment_var, outcome_var]],
+                    options=[col for col in all_columns if col not in [treatment_var, outcome_var]],
                     key="confounders_select",
                     help="Select variables that might influence both treatment and outcome"
-                )            
+                )
             if st.button("🔬 Run Causal Inference", type="primary"):
                 if treatment_var != outcome_var:
                     with st.spinner("Running causal inference..."):

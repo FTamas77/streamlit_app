@@ -50,8 +50,8 @@ __description__ = "Advanced causal analysis platform with AI integration"
 
 # Expose main components (optional)
 try:
-    from .models.causal_analyzer import CausalAnalyzer
-    from .ai.llm_integration import generate_domain_constraints, explain_results_with_llm
+    from causal.analyzer import CausalAnalyzer
+    from llm.llm import generate_domain_constraints, explain_results_with_llm
     
     __all__ = [
         'CausalAnalyzer',

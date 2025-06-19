@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import networkx as nx
@@ -54,30 +55,16 @@ def show_data_quality_summary(data):
             
             st.write(col_info)
 
-def create_display_names(columns, column_mapping=None):
-    """Create user-friendly display names for encoded variables
+def create_display_names(columns):
+    """Create user-friendly display names for variables
     
     Parameters:
-    - columns (List[str]): List of column names (may include encoded names like 'Fuel_Type_Code')
-    - column_mapping (Dict): Optional mapping from encoded names to original info
+    - columns (List[str]): List of column names
     
     Returns:
-    - List[str]: User-friendly display names
+    - List[str]: User-friendly display names (same as input for simplified approach)
     """
-    if not column_mapping:
-        return columns
-    
-    display_names = []
-    for col in columns:
-        if col in column_mapping:
-            # Use original column name for display
-            original_name = column_mapping[col]['original_column']
-            display_names.append(original_name)
-        else:
-            # Keep original name
-            display_names.append(col)
-    
-    return display_names
+    return columns
 
 def show_correlation_heatmap(correlation_matrix):
     """Display correlation heatmap
@@ -94,14 +81,13 @@ def show_correlation_heatmap(correlation_matrix):
     )
     st.plotly_chart(fig_corr, use_container_width=True)
 
-def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
+def show_causal_graph(adjacency_matrix, columns):
     """Display highly interactive causal graph with modern web features
     
     Parameters:
     - adjacency_matrix (np.ndarray): MUTABLE - 2D array representing causal relationships
       DirectLiNGAM format: adjacency_matrix[i,j] = causal coefficient from variable j to variable i
     - columns (List[str]): MUTABLE - List of column names for graph labels
-    - column_mapping (Dict): Optional mapping from encoded names to original info for display
     
     Features:
     - Interactive node selection and highlighting
@@ -111,14 +97,10 @@ def show_causal_graph(adjacency_matrix, columns, column_mapping=None):
     - Node clustering and layout options
     - Export capabilities
     """
-    import numpy as np
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    import networkx as nx
-    import colorsys
+    # All required imports are already available at module level
     
     # Create user-friendly display names
-    display_names = create_display_names(columns, column_mapping)
+    display_names = create_display_names(columns)
       # Calculate edge statistics for better visualization
     edge_magnitudes = []
     valid_edges = []
@@ -515,7 +497,12 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     - outcome_var (str): Name of outcome variable
     - analyzer: CausalAnalyzer instance for recalculating scenarios
     """
-    # Removed redundant heading - now handled by the main app
+    # Check if treatment is categorical - use specialized categorical policy explorer
+    if hasattr(analyzer.discovery, 'categorical_mappings') and treatment_var in analyzer.discovery.categorical_mappings:
+        show_categorical_policy_explorer(ate_results, treatment_var, outcome_var, analyzer)
+        return
+    
+    # Continue with continuous treatment policy explorer
     st.write("**Adjust the sliders below to explore different policy scenarios and see the impact in real-time:**")
     
     # Determine which data to use based on variable types
@@ -672,3 +659,190 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
         st.info(f"💡 **Interpretation:** Since ATE = {ate_estimate:.3f} < 0, decreasing {treatment_var} generally improves {outcome_var}")
     else:
         st.warning(f"⚠️ **Interpretation:** ATE ≈ 0 suggests {treatment_var} has minimal impact on {outcome_var}")
+
+def show_categorical_policy_explorer(ate_results, treatment_var, outcome_var, analyzer):
+    """Interactive policy explorer for categorical treatments
+    
+    Shows meaningful policy scenarios for categorical variables:
+    - Population redistribution scenarios
+    - Category-specific interventions 
+    - Pairwise treatment comparisons
+    """
+    categories = analyzer.discovery.categorical_mappings[treatment_var]['original_values']
+    encoding = analyzer.discovery.categorical_mappings[treatment_var]['encoding']
+    reverse_mapping = analyzer.discovery.categorical_mappings[treatment_var]['reverse']
+    
+    st.write("**Explore categorical treatment policies and their estimated impacts:**")
+    
+    # Get current distribution
+    working_data = analyzer.data.copy()
+    if treatment_var in analyzer.discovery.categorical_mappings:
+        # Use encoded data for calculations
+        for col in working_data.columns:
+            if col in analyzer.discovery.categorical_mappings:
+                col_encoding = analyzer.discovery.categorical_mappings[col]['encoding']
+                working_data[col] = working_data[col].map(col_encoding)
+    
+    current_dist = working_data[treatment_var].value_counts().sort_index()
+    total_population = len(working_data)
+    
+    st.subheader("📊 Current Population Distribution")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Current Distribution:**")
+        for encoded_val, count in current_dist.items():
+            category_name = reverse_mapping[encoded_val]
+            percentage = (count / total_population) * 100
+            st.write(f"• {category_name}: {count} ({percentage:.1f}%)")
+    
+    with col2:
+        # Show current average outcome
+        current_avg_outcome = working_data[outcome_var].mean()
+        st.metric("Current Average Outcome", f"{current_avg_outcome:.2f}")
+    
+    st.subheader("🎯 Policy Scenario Explorer")
+    
+    # Scenario type selection
+    scenario_type = st.radio(
+        "Select Policy Scenario Type:",
+        [
+            "Population Redistribution",
+            "Complete Category Switch", 
+            "Pairwise Comparison"
+        ],
+        help="Choose how you want to model the policy intervention"
+    )
+    
+    if scenario_type == "Population Redistribution":
+        st.write("**Scenario:** Redistribute the population across categories")
+        st.write("*Example: What if we could shift 20% of gasoline vehicles to electric?*")
+        
+        # Create sliders for each category
+        new_distribution = {}
+        remaining_percent = 100.0
+        
+        # Show sliders for all but the last category
+        for i, (encoded_val, category_name) in enumerate([(k, v) for k, v in reverse_mapping.items()][:-1]):
+            current_percent = (current_dist.get(encoded_val, 0) / total_population) * 100
+            
+            new_percent = st.slider(
+                f"% Population with {category_name}",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(current_percent),
+                step=1.0,
+                key=f"dist_{category_name}"
+            )
+            new_distribution[encoded_val] = new_percent
+            remaining_percent -= new_percent
+        
+        # Last category gets the remainder
+        last_encoded = max(reverse_mapping.keys())
+        last_category = reverse_mapping[last_encoded]
+        remaining_percent = max(0.0, remaining_percent)
+        new_distribution[last_encoded] = remaining_percent
+        
+        st.write(f"**{last_category}**: {remaining_percent:.1f}% (remainder)")
+        
+        # Calculate scenario outcome
+        scenario_outcome = 0.0
+        for encoded_val, percent in new_distribution.items():
+            category_data = working_data[working_data[treatment_var] == encoded_val]
+            if len(category_data) > 0:
+                category_avg = category_data[outcome_var].mean()
+                scenario_outcome += category_avg * (percent / 100.0)
+        
+        # Show impact
+        impact = scenario_outcome - current_avg_outcome
+        st.subheader("📈 Estimated Impact")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Scenario Outcome", f"{scenario_outcome:.2f}")
+        with col2:
+            st.metric("Current Outcome", f"{current_avg_outcome:.2f}")
+        with col3:
+            st.metric("Estimated Change", f"{impact:+.2f}")
+            
+    elif scenario_type == "Complete Category Switch":
+        st.write("**Scenario:** What if everyone switched to a specific category?")
+        st.write("*Example: What if all vehicles were electric?*")
+        
+        target_category = st.selectbox(
+            "Switch entire population to:",
+            options=categories,
+            help="Select the category that everyone should switch to"
+        )
+        
+        # Calculate outcome for this scenario
+        target_encoded = encoding[target_category]
+        target_data = working_data[working_data[treatment_var] == target_encoded]
+        
+        if len(target_data) > 0:
+            scenario_outcome = target_data[outcome_var].mean()
+            impact = scenario_outcome - current_avg_outcome
+            
+            st.subheader("📈 Estimated Impact")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Scenario Outcome", f"{scenario_outcome:.2f}")
+            with col2:
+                st.metric("Current Outcome", f"{current_avg_outcome:.2f}")
+            with col3:
+                st.metric("Estimated Change", f"{impact:+.2f}")
+                
+            # Show interpretation
+            st.info(f"""
+            **Interpretation:** If the entire population switched to {target_category}, 
+            the average {outcome_var} would change by {impact:+.2f} units.
+            """)
+        else:
+            st.warning(f"No data available for {target_category} category.")
+            
+    elif scenario_type == "Pairwise Comparison":
+        st.write("**Scenario:** Compare specific categories head-to-head")
+        st.write("*Example: Electric vs Gasoline vehicles*")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            category_a = st.selectbox("Category A:", options=categories, key="cat_a")
+        with col2:
+            category_b = st.selectbox("Category B:", options=categories, key="cat_b")
+        
+        if category_a != category_b:
+            encoded_a = encoding[category_a]
+            encoded_b = encoding[category_b]
+            
+            data_a = working_data[working_data[treatment_var] == encoded_a]
+            data_b = working_data[working_data[treatment_var] == encoded_b]
+            
+            if len(data_a) > 0 and len(data_b) > 0:
+                avg_a = data_a[outcome_var].mean()
+                avg_b = data_b[outcome_var].mean()
+                difference = avg_a - avg_b
+                
+                st.subheader("📊 Pairwise Comparison Results")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(f"{category_a} Average", f"{avg_a:.2f}")
+                with col2:
+                    st.metric(f"{category_b} Average", f"{avg_b:.2f}")
+                with col3:
+                    st.metric("Difference (A - B)", f"{difference:+.2f}")
+                
+                # Statistical interpretation
+                if abs(difference) > 0.1:  # Threshold for "meaningful" difference
+                    direction = "higher" if difference > 0 else "lower"
+                    st.success(f"""
+                    **Key Finding:** {category_a} is associated with {abs(difference):.2f} units 
+                    {direction} {outcome_var} compared to {category_b}.
+                    """)
+                else:
+                    st.info("The difference between categories appears to be minimal.")
+            else:
+                st.warning("Insufficient data for one or both categories.")
+        else:
+            st.warning("Please select two different categories to compare.")

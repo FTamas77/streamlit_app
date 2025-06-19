@@ -155,34 +155,48 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
                 print(f"DEBUG: encoded_data available (Mock object in tests)")
         else:
             print(f"DEBUG: No encoded_data available")
-        
-        # Check variable values and distributions
+          # Check variable values and distributions
         if treatment in analyzer.data.columns:
             print(f"DEBUG: Treatment '{treatment}' stats in analyzer.data:")
             print(f"       - Unique values: {analyzer.data[treatment].nunique()}")
-            print(f"       - Value range: [{analyzer.data[treatment].min():.3f}, {analyzer.data[treatment].max():.3f}]")
-            print(f"       - Mean: {analyzer.data[treatment].mean():.3f}")
-            print(f"       - Std: {analyzer.data[treatment].std():.3f}")
+            # Check if treatment is numeric for proper formatting
+            if analyzer.data[treatment].dtype.kind in 'biufc':  # numeric types
+                print(f"       - Value range: [{analyzer.data[treatment].min():.3f}, {analyzer.data[treatment].max():.3f}]")
+                print(f"       - Mean: {analyzer.data[treatment].mean():.3f}")
+                print(f"       - Std: {analyzer.data[treatment].std():.3f}")
+            else:
+                print(f"       - Value range: [{analyzer.data[treatment].min()}, {analyzer.data[treatment].max()}]")
+                print(f"       - Type: categorical")
             print(f"       - Sample values: {list(analyzer.data[treatment].head())}")
         
         if outcome in analyzer.data.columns:
             print(f"DEBUG: Outcome '{outcome}' stats in analyzer.data:")
             print(f"       - Unique values: {analyzer.data[outcome].nunique()}")
-            print(f"       - Value range: [{analyzer.data[outcome].min():.3f}, {analyzer.data[outcome].max():.3f}]")
-            print(f"       - Mean: {analyzer.data[outcome].mean():.3f}")
-            print(f"       - Std: {analyzer.data[outcome].std():.3f}")
+            # Check if outcome is numeric for proper formatting
+            if analyzer.data[outcome].dtype.kind in 'biufc':  # numeric types
+                print(f"       - Value range: [{analyzer.data[outcome].min():.3f}, {analyzer.data[outcome].max():.3f}]")
+                print(f"       - Mean: {analyzer.data[outcome].mean():.3f}")
+                print(f"       - Std: {analyzer.data[outcome].std():.3f}")
+            else:
+                print(f"       - Value range: [{analyzer.data[outcome].min()}, {analyzer.data[outcome].max()}]")
+                print(f"       - Type: categorical")
             print(f"       - Sample values: {list(analyzer.data[outcome].head())}")
-        
-        # Check correlation
+          # Check correlation
         if treatment in analyzer.data.columns and outcome in analyzer.data.columns:
-            correlation = analyzer.data[treatment].corr(analyzer.data[outcome])
-            print(f"DEBUG: Correlation between {treatment} and {outcome}: {correlation:.4f}")        # Determine which data to use - CRITICAL: must match the graph columns
+            # Calculate correlation if both variables are numeric
+            if (analyzer.data[treatment].dtype.kind in 'biufc' and 
+                analyzer.data[outcome].dtype.kind in 'biufc'):
+                correlation = analyzer.data[treatment].corr(analyzer.data[outcome])
+                print(f"DEBUG: Correlation between {treatment} and {outcome}: {correlation:.4f}")
+            else:
+                print(f"DEBUG: Correlation not calculated (at least one variable is categorical)")
+        
+        # Determine which data to use - CRITICAL: must match the graph columns
         use_encoded_data = False
         data_to_use = analyzer.data
-        
-        # Check if we're using encoded columns for the graph
+          # Check if we're using encoded columns for the graph
         graph_uses_encoded = False
-        if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
+        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
             graph_uses_encoded = True
         
         # If the graph uses encoded variables OR we have encoded variables in treatment/outcome/confounders
@@ -273,34 +287,46 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         
         print(f"DEBUG: Using {'encoded' if use_encoded_data else 'original'} data for inference")
         print(f"DEBUG: Data shape: {data_to_use.shape}")
-        
-        # Update variable stats with the data we're actually using
+          # Update variable stats with the data we're actually using
         print(f"DEBUG: Treatment '{treatment}' stats in data_to_use:")
         print(f"       - Unique values: {data_to_use[treatment].nunique()}")
-        print(f"       - Value range: [{data_to_use[treatment].min():.3f}, {data_to_use[treatment].max():.3f}]")
-        print(f"       - Mean: {data_to_use[treatment].mean():.3f}")
-        print(f"       - Std: {data_to_use[treatment].std():.3f}")
+        # Check if treatment is numeric for proper formatting
+        if data_to_use[treatment].dtype.kind in 'biufc':  # numeric types
+            print(f"       - Value range: [{data_to_use[treatment].min():.3f}, {data_to_use[treatment].max():.3f}]")
+            print(f"       - Mean: {data_to_use[treatment].mean():.3f}")
+            print(f"       - Std: {data_to_use[treatment].std():.3f}")
+        else:
+            print(f"       - Value range: [{data_to_use[treatment].min()}, {data_to_use[treatment].max()}]")
+            print(f"       - Type: categorical")
         
         print(f"DEBUG: Outcome '{outcome}' stats in data_to_use:")
         print(f"       - Unique values: {data_to_use[outcome].nunique()}")
-        print(f"       - Value range: [{data_to_use[outcome].min():.3f}, {data_to_use[outcome].max():.3f}]")
-        print(f"       - Mean: {data_to_use[outcome].mean():.3f}")
-        print(f"       - Std: {data_to_use[outcome].std():.3f}")
-        
-        correlation = data_to_use[treatment].corr(data_to_use[outcome])
-        print(f"DEBUG: Correlation between {treatment} and {outcome} in data_to_use: {correlation:.4f}")
+        # Check if outcome is numeric for proper formatting
+        if data_to_use[outcome].dtype.kind in 'biufc':  # numeric types
+            print(f"       - Value range: [{data_to_use[outcome].min():.3f}, {data_to_use[outcome].max():.3f}]")
+            print(f"       - Mean: {data_to_use[outcome].mean():.3f}")
+            print(f"       - Std: {data_to_use[outcome].std():.3f}")
+        else:
+            print(f"       - Value range: [{data_to_use[outcome].min()}, {data_to_use[outcome].max()}]")
+            print(f"       - Type: categorical")
+          # Calculate correlation if both variables are numeric
+        if (data_to_use[treatment].dtype.kind in 'biufc' and 
+            data_to_use[outcome].dtype.kind in 'biufc'):
+            correlation = data_to_use[treatment].corr(data_to_use[outcome])
+            print(f"DEBUG: Correlation between {treatment} and {outcome} in data_to_use: {correlation:.4f}")
+        else:
+            print(f"DEBUG: Correlation not calculated (at least one variable is categorical)")
         
         print(f"DEBUG: ========================================================")
         
         # Only create DOT graph if we have an adjacency matrix from causal discovery
         graph = None
         if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
-            print("DEBUG: Using adjacency_matrix to build graph for DoWhy")
-              # CRITICAL FIX: Always use the same columns that were used for causal discovery
+            print("DEBUG: Using adjacency_matrix to build graph for DoWhy")            # CRITICAL FIX: Always use the same columns that were used for causal discovery
             # The adjacency matrix dimensions must match exactly with the graph columns
-            if hasattr(analyzer.discovery, 'encoded_columns') and analyzer.discovery.encoded_columns:
-                graph_columns = analyzer.discovery.encoded_columns
-                print(f"DEBUG: Using encoded columns for graph (matches adjacency matrix): {graph_columns}")
+            if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
+                graph_columns = analyzer.discovery.columns
+                print(f"DEBUG: Using columns for graph (matches adjacency matrix): {graph_columns}")
                 print(f"DEBUG: Adjacency matrix shape: {analyzer.adjacency_matrix.shape}")
                 
                 # Handle Mock objects in tests
@@ -315,10 +341,10 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
                         graph_columns = None
                 except (TypeError, AttributeError):
                     # Mock object in tests - use fallback to original data columns
-                    print(f"DEBUG: Mock encoded_columns in tests - using original data columns")
+                    print(f"DEBUG: Mock columns in tests - using original data columns")
                     graph_columns = list(analyzer.data.columns)
             else:
-                print(f"DEBUG: No encoded_columns available in discovery module")
+                print(f"DEBUG: No columns available in discovery module")
                 graph_columns = None
             
             if graph_columns is not None:
