@@ -18,7 +18,7 @@ sys.path.append(os.path.dirname(__file__))
 
 from causal.analyzer import CausalAnalyzer
 from llm.llm import generate_domain_constraints, explain_results_with_llm
-from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table, show_interactive_scenario_explorer
+from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table, show_interactive_scenario_explorer, show_traditional_comparison
 
 # Comprehensive warning suppression
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -518,10 +518,38 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             )
         
         with col2:
-            st.info(f"**Interpretation:** {ate_results['interpretation']}")
-          # Detailed results
+            st.info(f"**Interpretation:** {ate_results['interpretation']}")        # Detailed results
         st.subheader("🔍 Detailed Results by Method")
         show_results_table(ate_results)
+          # Causal AI vs Traditional Analysis Comparison
+        st.markdown('<div class="step-header"><h2>⚖️ Step 5.5: Causal AI vs Traditional Analysis</h2></div>', unsafe_allow_html=True)
+        
+        with st.expander("🔬 **Compare with Traditional Statistical Methods**", expanded=False):
+            st.info("💡 **Why This Matters:** See how causal AI results differ from traditional statistical approaches that companies typically use.")
+            
+            if st.button("🔄 Run Traditional Analysis Comparison", type="secondary"):
+                with st.spinner("Running traditional statistical analysis..."):
+                    from utils.traditional_analysis import run_traditional_analysis, compare_causal_vs_traditional
+                    
+                    # Run traditional analysis
+                    traditional_results = run_traditional_analysis(analyzer, treatment_var, outcome_var, confounders)
+                    
+                    # Compare results
+                    comparison = compare_causal_vs_traditional(ate_results, traditional_results, treatment_var, outcome_var)
+                    
+                    # Store results in session state
+                    st.session_state['traditional_results'] = traditional_results
+                    st.session_state['comparison_results'] = comparison
+            
+            # Display comparison results if available
+            if st.session_state.get('traditional_results') and st.session_state.get('comparison_results'):
+                show_traditional_comparison(
+                    st.session_state['traditional_results'], 
+                    st.session_state['comparison_results'],
+                    ate_results,
+                    treatment_var,
+                    outcome_var
+                )
           # Step 6: Interactive Policy Explorer - only if we have a meaningful effect
         if abs(ate_results['consensus_estimate']) > 0.01:  # Only show if we have a meaningful effect
             st.markdown('<div class="step-header"><h2>🎮 Step 6: Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)

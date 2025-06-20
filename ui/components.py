@@ -846,3 +846,116 @@ def show_categorical_policy_explorer(ate_results, treatment_var, outcome_var, an
                 st.warning("Insufficient data for one or both categories.")
         else:
             st.warning("Please select two different categories to compare.")
+
+def show_traditional_comparison(traditional_results, comparison_results, causal_results, treatment_var, outcome_var):
+    """Display comparison between causal AI and traditional statistical methods"""
+    st.markdown("### 📊 **Results Comparison**")
+    
+    # Summary comparison table
+    causal_estimate = causal_results.get('consensus_estimate', 0)
+    
+    # Create comparison dataframe
+    comparison_data = []
+    comparison_data.append({
+        'Method': '🧠 Causal AI (DoWHy)',
+        'Estimate': f"{causal_estimate:.4f}",
+        'Confidence Interval': f"[{causal_results.get('confidence_interval', [0, 0])[0]:.4f}, {causal_results.get('confidence_interval', [0, 0])[1]:.4f}]",
+        'P-value': f"{causal_results.get('p_value', 'N/A')}",
+        'Accounts for Confounders': '✅ Yes'
+    })
+    
+    # Add traditional methods
+    for method_name, method_results in traditional_results['methods'].items():
+        if 'error' not in method_results:
+            comparison_data.append({
+                'Method': f"📈 {method_results['name']}",
+                'Estimate': f"{method_results.get('estimate', 'N/A'):.4f}" if isinstance(method_results.get('estimate'), (int, float)) else 'N/A',
+                'Confidence Interval': 'Not calculated',
+                'P-value': f"{method_results.get('p_value', 'N/A'):.4f}" if method_results.get('p_value') else 'N/A',
+                'Accounts for Confounders': '✅ Yes' if 'multiple' in method_name.lower() else '❌ No'
+            })
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    st.dataframe(comparison_df, use_container_width=True)
+    
+    # Key differences section
+    if comparison_results['key_differences']:
+        st.markdown("### ⚠️ **Key Differences Found**")
+        for diff in comparison_results['key_differences']:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Causal AI", f"{diff['causal']:.4f}")
+            with col2:
+                st.metric(diff['method'], f"{diff['traditional']:.4f}")
+            with col3:
+                st.metric("Difference", f"{diff['percent_difference']:.1f}%")
+            
+            if diff['percent_difference'] > 50:
+                st.error(f"🚨 **Large Difference Alert**: {diff['interpretation']}")
+            elif diff['percent_difference'] > 20:
+                st.warning(f"⚠️ **Notable Difference**: {diff['interpretation']}")
+            else:
+                st.info(f"ℹ️ **Moderate Difference**: {diff['interpretation']}")
+    else:
+        st.success("✅ **Consistent Results**: Causal AI and traditional methods show similar estimates")
+    
+    # Method details
+    st.markdown("### 🔍 **Method Details**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🧠 **Causal AI Approach**")
+        st.success("✅ **Strengths:**")
+        st.markdown("""
+        - Identifies and controls for confounding variables
+        - Uses causal graph structure 
+        - Provides robust causal estimates
+        - Handles complex causal relationships
+        - Statistical significance testing
+        """)
+        
+        st.info("📋 **Methods Used:**")
+        st.markdown("""
+        - Causal discovery (DirectLiNGAM)
+        - DoWHy causal inference framework
+        - Multiple estimation methods
+        - Robustness checks
+        """)
+    
+    with col2:
+        st.markdown("#### 📈 **Traditional Statistical Methods**")
+        st.warning("⚠️ **Limitations:**")
+        for limitation in traditional_results.get('limitations', []):
+            st.markdown(f"- {limitation}")
+        
+        st.info("📋 **Methods Compared:**")
+        for method_name, method_results in traditional_results['methods'].items():
+            if 'error' not in method_results:
+                st.markdown(f"- **{method_results['name']}**: {method_results['description']}")
+    
+    # Business implications
+    st.markdown("### 💼 **Business Implications**")
+    for implication in comparison_results['business_implications']:
+        st.markdown(implication)
+    
+    # Summary recommendation
+    st.markdown("### 🎯 **Bottom Line**")
+    max_diff = max([diff['percent_difference'] for diff in comparison_results['key_differences']], default=0)
+    
+    if max_diff > 50:
+        st.error(f"""
+        **🚨 Critical Decision Impact**: Traditional methods could lead to decisions that are 
+        {max_diff:.0f}% off from the true causal effect. Using Causal AI is strongly recommended 
+        for accurate business decisions regarding {treatment_var} → {outcome_var}.
+        """)
+    elif max_diff > 20:
+        st.warning(f"""
+        **⚠️ Significant Difference**: Traditional methods show {max_diff:.0f}% difference from 
+        causal estimates. Causal AI provides more reliable insights for strategic decisions.
+        """)
+    else:
+        st.info(f"""
+        **✅ Methods Aligned**: Traditional and causal methods show similar results (≤{max_diff:.0f}% difference). 
+        However, Causal AI still provides stronger scientific evidence and confidence in the estimates.
+        """)
