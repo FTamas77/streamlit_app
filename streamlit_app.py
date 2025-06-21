@@ -420,31 +420,12 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         with col2:
             if st.button("⏭️ Skip AI Constraints", key="skip_ai_constraints"):
                 st.session_state['constraints_generated'] = False
-                st.rerun()
-      # Manual constraint builder
+                st.rerun()      # Manual constraint builder
     with st.expander("➕ Add Manual Constraints", expanded=False):
-        from llm.llm import display_manual_constraint_builder, combine_ai_and_manual_constraints
+        from llm.llm import display_manual_constraint_builder
         
         st.markdown("**Add your own domain knowledge:**")
-        manual_constraints = display_manual_constraint_builder(list(analyzer.data.columns))
-        
-        # Add manual constraints to the pool (don't show immediately)
-        if manual_constraints['required_edges'] or manual_constraints['forbidden_edges']:
-            if st.button("📝 Add to Constraints Pool", key="add_manual_constraints"):
-                # Combine with existing constraints (AI + manual)
-                if st.session_state.get('constraints_data'):
-                    # Merge with existing constraints
-                    existing = st.session_state['constraints_data']
-                    combined = combine_ai_and_manual_constraints(existing, manual_constraints)
-                    st.session_state['constraints_data'] = combined
-                else:
-                    # First constraints being added
-                    st.session_state['constraints_data'] = manual_constraints
-                
-                # Mark as having constraints
-                st.session_state['domain_constraints_generated'] = True
-                st.success(f"✅ Added {len(manual_constraints.get('required_edges', [])) + len(manual_constraints.get('forbidden_edges', []))} constraints to pool")
-                st.rerun()    # Show unified constraint review section
+        display_manual_constraint_builder(list(analyzer.data.columns))# Show unified constraint review section
     if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
         constraints_data = st.session_state['constraints_data']
         

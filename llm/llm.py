@@ -225,12 +225,8 @@ def get_domain_constraints_help():
 """
 
 def display_manual_constraint_builder(columns: List[str]) -> Dict:
-    """Professional manual constraint builder interface"""
+    """Professional manual constraint builder interface - immediately adds to pool"""
     import streamlit as st
-    
-    # Initialize session state for manual constraints if not exists
-    if 'manual_constraints' not in st.session_state:
-        st.session_state['manual_constraints'] = {"forbidden_edges": [], "required_edges": []}
     
     # Manual constraint input - clean layout
     col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
@@ -249,43 +245,38 @@ def display_manual_constraint_builder(columns: List[str]) -> Dict:
         add_disabled = cause_var == "Select..." or effect_var == "Select..." or cause_var == effect_var
         
         if st.button("Add", disabled=add_disabled, key="add_manual_constraint"):
+            # Immediately add to the main constraint pool
+            constraint = [cause_var, effect_var]
+            
             if relationship == "→":
-                constraint = [cause_var, effect_var]
-                if constraint not in st.session_state['manual_constraints']['required_edges']:
-                    st.session_state['manual_constraints']['required_edges'].append(constraint)
+                # Add to required edges in the main pool
+                if st.session_state.get('constraints_data'):
+                    if constraint not in st.session_state['constraints_data'].get('required_edges', []):
+                        st.session_state['constraints_data']['required_edges'].append(constraint)
+                else:
+                    st.session_state['constraints_data'] = {"forbidden_edges": [], "required_edges": [constraint]}
+                
+                # Mark as having constraints and rerun to show in final list
+                st.session_state['domain_constraints_generated'] = True
+                st.rerun()
+                
             else:  # ↛
-                constraint = [cause_var, effect_var]
-                if constraint not in st.session_state['manual_constraints']['forbidden_edges']:
-                    st.session_state['manual_constraints']['forbidden_edges'].append(constraint)
+                # Add to forbidden edges in the main pool
+                if st.session_state.get('constraints_data'):
+                    if constraint not in st.session_state['constraints_data'].get('forbidden_edges', []):
+                        st.session_state['constraints_data']['forbidden_edges'].append(constraint)
+                else:
+                    st.session_state['constraints_data'] = {"forbidden_edges": [constraint], "required_edges": []}
+                
+                # Mark as having constraints and rerun to show in final list
+                st.session_state['domain_constraints_generated'] = True
+                st.rerun()
     
-    # Display current manual constraints - minimal design
-    manual_constraints = st.session_state['manual_constraints']
+    # Show simple instructions
+    st.info("💡 Use the form above to add manual constraints. They will appear immediately in the constraint review section below.")
     
-    # Required edges
-    if manual_constraints['required_edges']:
-        st.markdown("**Required:**")
-        for i, edge in enumerate(manual_constraints['required_edges']):
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                st.write(f"{edge[0]} → {edge[1]}")
-            with col2:
-                if st.button("×", key=f"delete_req_{i}"):
-                    st.session_state['manual_constraints']['required_edges'].pop(i)
-                    st.rerun()
-    
-    # Forbidden edges
-    if manual_constraints['forbidden_edges']:
-        st.markdown("**Forbidden:**")
-        for i, edge in enumerate(manual_constraints['forbidden_edges']):
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                st.write(f"{edge[0]} ↛ {edge[1]}")
-            with col2:
-                if st.button("×", key=f"delete_forb_{i}"):
-                    st.session_state['manual_constraints']['forbidden_edges'].pop(i)
-                    st.rerun()
-    
-    return manual_constraints
+    # Return empty dict since we're adding directly to the main pool
+    return {"forbidden_edges": [], "required_edges": []}
 
 def combine_ai_and_manual_constraints(ai_constraints: Dict, manual_constraints: Dict) -> Dict:
     """Combine AI suggestions with manual constraints, avoiding duplicates"""
