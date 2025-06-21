@@ -221,8 +221,17 @@ class CausalAnalyzer:
                 if self.adjacency_matrix is None:
                     st.warning("Causal discovery completed but no adjacency matrix was generated")
             return success
+            
         except Exception as e:
-            st.error(f"Causal discovery failed: {str(e)}")
+            error_msg = str(e)
+            if "LiNGAM" in error_msg:
+                st.error(f"❌ Causal discovery failed: Missing required dependency. {error_msg}")
+            elif "Need at least 2 columns" in error_msg:
+                st.error(f"❌ Causal discovery failed: Insufficient data. {error_msg}")
+            elif "No data loaded" in error_msg or "Data is empty" in error_msg:
+                st.error(f"❌ Data validation error: {error_msg}")
+            else:
+                st.error(f"❌ Causal discovery failed: {error_msg}")
             return False
 
     def calculate_ate(self, treatment: str, outcome: str) -> Dict:

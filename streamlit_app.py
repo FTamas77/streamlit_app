@@ -389,74 +389,132 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         else:
-            st.error("Domain context required")
-      # Show simple approval interface if constraints were generated
+            st.error("Domain context required")    # Show simple approval interface if constraints were generated
     if st.session_state.get('constraints_generated') and st.session_state.get('suggested_constraints'):
         from llm.llm import display_simple_constraint_approval
         
+        st.markdown("### 🤖 **AI-Generated Constraints**")
         # Get user approval/rejection
-        approved_constraints = display_simple_constraint_approval(st.session_state['suggested_constraints'])        # Action buttons stacked vertically
-        if st.button("Apply Selected", type="primary", key="apply_constraints"):
-            st.session_state['constraints_data'] = approved_constraints
-            st.session_state['domain_constraints_generated'] = True
-            st.session_state['constraints_generated'] = False
-            analyzer.domain_constraints = approved_constraints
-            st.rerun()
+        approved_constraints = display_simple_constraint_approval(st.session_state['suggested_constraints'])
         
-        if st.button("Skip All", key="skip_all"):
-            st.session_state['constraints_generated'] = False
-            st.rerun()
-    
-    # Manual constraint builder
-    with st.expander("Manual Constraints", expanded=False):
+        # Action buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📝 Add Selected to Pool", type="primary", key="add_ai_constraints"):
+                # Add approved constraints to the constraint pool
+                if st.session_state.get('constraints_data'):
+                    # Merge with existing constraints
+                    existing = st.session_state['constraints_data']
+                    from llm.llm import combine_ai_and_manual_constraints
+                    combined = combine_ai_and_manual_constraints(existing, approved_constraints)
+                    st.session_state['constraints_data'] = combined
+                else:
+                    # First constraints being added
+                    st.session_state['constraints_data'] = approved_constraints
+                
+                st.session_state['domain_constraints_generated'] = True
+                st.session_state['constraints_generated'] = False
+                st.success(f"✅ Added {len(approved_constraints.get('required_edges', [])) + len(approved_constraints.get('forbidden_edges', []))} AI constraints to pool")
+                st.rerun()
+        
+        with col2:
+            if st.button("⏭️ Skip AI Constraints", key="skip_ai_constraints"):
+                st.session_state['constraints_generated'] = False
+                st.rerun()
+      # Manual constraint builder
+    with st.expander("➕ Add Manual Constraints", expanded=False):
         from llm.llm import display_manual_constraint_builder, combine_ai_and_manual_constraints
         
+        st.markdown("**Add your own domain knowledge:**")
         manual_constraints = display_manual_constraint_builder(list(analyzer.data.columns))
         
-        # Store manual constraints in session state for preview
+        # Add manual constraints to the pool (don't show immediately)
         if manual_constraints['required_edges'] or manual_constraints['forbidden_edges']:
-            st.session_state['manual_constraints'] = manual_constraints
-            
-            # Auto-apply manual constraints if they exist
-            if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
-                # Combine with existing AI constraints
-                ai_constraints = st.session_state['constraints_data']
-                combined = combine_ai_and_manual_constraints(ai_constraints, manual_constraints)
-                st.session_state['constraints_data'] = combined
-                analyzer.domain_constraints = combined
-            else:
-                # Apply manual constraints only
-                st.session_state['constraints_data'] = manual_constraints
+            if st.button("📝 Add to Constraints Pool", key="add_manual_constraints"):
+                # Combine with existing constraints (AI + manual)
+                if st.session_state.get('constraints_data'):
+                    # Merge with existing constraints
+                    existing = st.session_state['constraints_data']
+                    combined = combine_ai_and_manual_constraints(existing, manual_constraints)
+                    st.session_state['constraints_data'] = combined
+                else:
+                    # First constraints being added
+                    st.session_state['constraints_data'] = manual_constraints
+                
+                # Mark as having constraints
                 st.session_state['domain_constraints_generated'] = True
-                analyzer.domain_constraints = manual_constraints# Show active constraints in a single, clean display
+                st.success(f"✅ Added {len(manual_constraints.get('required_edges', [])) + len(manual_constraints.get('forbidden_edges', []))} constraints to pool")
+                st.rerun()    # Show unified constraint review section
     if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
         constraints_data = st.session_state['constraints_data']
-        num_required = len(constraints_data.get('required_edges', []))
-        num_forbidden = len(constraints_data.get('forbidden_edges', []))
         
-        # Single success message with constraint details
-        constraint_details = []
+        st.markdown("### 📋 **Review All Constraints**")
+        st.markdown("*Remove any constraints you don't want to apply:*")
         
-        if num_required > 0:
-            for edge in constraints_data['required_edges']:
-                constraint_details.append(f"✅ **{edge[0]}** causes **{edge[1]}**")
+        # Create a modifiable copy for editing
+        modified_constraints = {
+            'required_edges': constraints_data.get('required_edges', []).copy(),
+            'forbidden_edges': constraints_data.get('forbidden_edges', []).copy(),
+            'explanation': constraints_data.get('explanation', '')
+        }
         
-        if num_forbidden > 0:
-            for edge in constraints_data['forbidden_edges']:
-                constraint_details.append(f"🚫 **{edge[0]}** cannot cause **{edge[1]}**")        # Combined display
-        if constraint_details:
-            st.markdown("**Active Constraints:**")
-            # Display each constraint on a separate line
-            for detail in constraint_details:
-                st.markdown(f"• {detail}")
+        constraints_modified = False
+        
+        # Show required edges with remove buttons
+        if modified_constraints['required_edges']:
+            st.markdown("**✅ Required Relationships (A must cause B):**")
+            for i, edge in enumerate(modified_constraints['required_edges']):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"• **{edge[0]}** → **{edge[1]}**")
+                with col2:
+                    if st.button("🗑️", key=f"remove_required_{i}", help="Remove this constraint"):
+                        modified_constraints['required_edges'].remove(edge)
+                        constraints_modified = True
+        
+        # Show forbidden edges with remove buttons  
+        if modified_constraints['forbidden_edges']:
+            st.markdown("**🚫 Forbidden Relationships (A cannot cause B):**")
+            for i, edge in enumerate(modified_constraints['forbidden_edges']):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"• **{edge[0]}** ✗ **{edge[1]}**")
+                with col2:
+                    if st.button("🗑️", key=f"remove_forbidden_{i}", help="Remove this constraint"):
+                        modified_constraints['forbidden_edges'].remove(edge)
+                        constraints_modified = True
+        
+        # Update session state if constraints were modified
+        if constraints_modified:
+            st.session_state['constraints_data'] = modified_constraints
+            st.rerun()
+            
+        # Action buttons
+        total_constraints = len(modified_constraints['required_edges']) + len(modified_constraints['forbidden_edges'])
+        
+        if total_constraints > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Apply These Constraints", type="primary", key="apply_final_constraints"):
+                    analyzer.domain_constraints = modified_constraints
+                    st.success(f"🎯 Applied {total_constraints} constraints for causal discovery!")
+                    
+            with col2:
+                if st.button("🗑️ Clear All Constraints", key="clear_all_constraints"):
+                    st.session_state['constraints_data'] = None
+                    st.session_state['domain_constraints_generated'] = False
+                    st.session_state['constraints_generated'] = False
+                    analyzer.domain_constraints = None
+                    st.rerun()
+        else:
+            st.info("No constraints in pool. Add some above or skip to use defaults.")
     # Step 3: Causal Discovery
     st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
     
     # Add validation for constraints
     constraints_ready = (
         st.session_state.get('domain_constraints_generated') or 
-        st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints", key="skip_constraints_checkbox")
-    )
+        st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints", key="skip_constraints_checkbox")    )
     
     if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready, key="run_causal_discovery_btn"):
         with st.spinner("Discovering causal relationships..."):
@@ -473,7 +531,23 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         else:
             st.session_state['causal_discovery_completed'] = False
             st.session_state['last_action'] = 'discovery_failed'
-            st.error("❌ Causal discovery failed")
+            # Note: Specific error messages are already displayed by the discovery module
+            # Show helpful guidance for next steps
+            with st.expander("💡 Troubleshooting Help", expanded=False):
+                st.markdown("""
+                **Common issues and solutions:**
+                - **Missing dependencies**: Install required packages with `pip install lingam`
+                - **Insufficient data**: Ensure your dataset has at least 2 numeric columns
+                - **Data quality**: Check for missing values, constant columns, or data formatting issues
+                - **Constraints conflicts**: Review your domain constraints for logical inconsistencies
+                
+                **Next steps:**
+                1. Review the error message above for specific details
+                2. Check your data quality in Step 1
+                3. Simplify or remove domain constraints in Step 2
+                4. Try with a different dataset or data subset
+                """)
+            
     
     # Show causal discovery results
     if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
