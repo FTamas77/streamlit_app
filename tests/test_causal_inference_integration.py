@@ -66,74 +66,81 @@ def create_mock_analyzer(with_adjacency_matrix=False):
     
     return mock_analyzer
 
-def test_causal_inference_no_confounders_no_adjacency():
-    """Test: No confounders, No adjacency matrix - should produce non-significant effect due to confounding"""
-    print("\n🧪 Test 1: No confounders, No adjacency matrix")
+def create_test_data():
+    """Create test data for causal inference testing"""
+    import pandas as pd
+    import numpy as np
+    np.random.seed(42)
+    n = 1000
+    
+    # Generate confounders
+    X = np.random.normal(0, 1, n)
+    Y = np.random.normal(0, 1, n) 
+    Z = np.random.normal(0, 1, n)
+    
+    # Treatment depends on confounders
+    treatment_prob = 1 / (1 + np.exp(-(0.3*X + 0.2*Y + 0.1*Z)))
+    treatment = np.random.binomial(1, treatment_prob, n)
+    
+    # Outcome depends on treatment and confounders 
+    outcome = 0.5 * treatment + 0.3 * X + 0.2 * Y + 0.1 * Z + np.random.normal(0, 0.5, n)
+    
+    return pd.DataFrame({
+        'X': X, 'Y': Y, 'Z': Z,
+        'treatment': treatment,
+        'outcome': outcome
+    })
+
+def test_causal_inference_no_adjacency():
+    """Test: No adjacency matrix - should show warning about needing causal discovery"""
+    print("\n🧪 Test 1: No adjacency matrix")
     print("=" * 60)
     
-    mock_analyzer = create_mock_analyzer(with_adjacency_matrix=False)
+    from causal.analyzer import CausalAnalyzer
     
-    # Don't mock the statistical functions - use real calculations to see confounding bias
-    result = calculate_ate_dowhy(
-        analyzer=mock_analyzer,
-        treatment='treatment',
-        outcome='outcome',
-        confounders=None
-    )
+    # Create a real analyzer without running discovery
+    analyzer = CausalAnalyzer()
+    analyzer.data = create_test_data()
+    # Don't run causal discovery, so adjacency_matrix should be None
     
-    print("Expected DEBUG messages:")
-    print("- confounders provided: None")
-    print("- analyzer has adjacency_matrix: False")
-    print("- No adjacency_matrix available, not passing graph to DoWhy")
-    print("- No confounders provided, relying on graph or DoWhy automatic confounder selection")
-    print("- Not passing graph to DoWhy causal model")
+    # Test should now require adjacency matrix
+    try:
+        result = analyzer.calculate_ate('treatment', 'outcome')
+        assert False, "Should have raised ValueError about missing causal discovery"
+    except ValueError as e:
+        print(f"✅ Correctly caught error: {e}")
+        assert "Causal discovery must be run" in str(e)
     
-    assert result is not None
-    assert 'consensus_estimate' in result
-      # Without proper confounders or adjacency matrix, the effect may be biased/non-significant
-    if 'estimates' in result and 'Linear Regression' in result['estimates']:
-        lr_result = result['estimates']['Linear Regression']
-        if 'p_value' in lr_result and lr_result['p_value'] is not None:
-            print(f"📊 P-value: {lr_result['p_value']:.4f}")
-            print(f"📊 Effect estimate: {result['consensus_estimate']:.4f}")
-            
-            # This might not be significant due to confounding bias
-            if lr_result['p_value'] >= 0.05:
-                print("⚠️ Non-significant result - as expected due to confounding bias without proper controls")
-            else:
-                print("⚠️ Significant result despite lack of confounding controls - might indicate strong effect")
-        else:
-            print("📊 No p-value available in DoWhy results")
-            print(f"📊 Effect estimate: {result['consensus_estimate']:.4f}")
-    
+    print("Expected behavior:")
+    print("- Should require causal discovery to be run first")
+    print("- Should fail with meaningful error message")
     print("✅ Test 1 completed successfully")
 
-def test_causal_inference_with_confounders_no_adjacency():
-    """Test: With confounders, No adjacency matrix - should produce significant effect"""
-    print("\n🧪 Test 2: With confounders, No adjacency matrix")
+def test_causal_inference_with_adjacency():
+    """Test: With adjacency matrix - should work properly with automatic confounder identification"""
+    print("\n🧪 Test 2: With adjacency matrix")
     print("=" * 60)
     
-    mock_analyzer = create_mock_analyzer(with_adjacency_matrix=False)
-    confounders = ['X', 'Y']  # Important confounders that affect both treatment and outcome
+    mock_analyzer = create_mock_analyzer(with_adjacency_matrix=True)
     
-    # Don't mock the statistical functions - use real calculations
+    # This should work since we have the causal structure
     result = calculate_ate_dowhy(
         analyzer=mock_analyzer,
         treatment='treatment',
-        outcome='outcome',
-        confounders=confounders
+        outcome='outcome'
     )
     
     print("Expected DEBUG messages:")
-    print(f"- confounders provided: {confounders}")
-    print("- analyzer has adjacency_matrix: False")
-    print("- No adjacency_matrix available, not passing graph to DoWhy")
-    print(f"- Using user-specified confounders: {confounders}")
-    print("- Not passing graph to DoWhy causal model")
+    print("- Using causal graph structure for confounder identification")
+    print("- analyzer has adjacency_matrix: True")
+    print("- Using adjacency_matrix to build graph for DoWhy")
+    print("- Confounders will be automatically identified from causal graph structure")
+    print("- Passing graph to DoWhy causal model")
     
     assert result is not None
     assert 'consensus_estimate' in result
-      # Check for statistical significance when proper confounders are used
+    
+    # Check for statistical significance when proper graph structure is used
     if 'estimates' in result and 'Linear Regression' in result['estimates']:
         lr_result = result['estimates']['Linear Regression']
         if 'p_value' in lr_result and lr_result['p_value'] is not None:
@@ -161,15 +168,14 @@ def test_causal_inference_no_confounders_with_adjacency():
     result = calculate_ate_dowhy(
         analyzer=mock_analyzer,
         treatment='treatment',
-        outcome='outcome',
-        confounders=None
+        outcome='outcome'
     )
     
     print("Expected DEBUG messages:")
-    print("- confounders provided: None")
+    print("- Using causal graph structure for confounder identification")
     print("- analyzer has adjacency_matrix: True")
     print("- Using adjacency_matrix to build graph for DoWhy")
-    print("- No confounders provided, relying on graph or DoWhy automatic confounder selection")
+    print("- Confounders will be automatically identified from causal graph structure")
     print("- Passing graph to DoWhy causal model")
     
     assert result is not None
@@ -192,26 +198,24 @@ def test_causal_inference_no_confounders_with_adjacency():
     print("✅ Test 3 completed successfully")
 
 def test_causal_inference_with_confounders_with_adjacency():
-    """Test: With confounders, With adjacency matrix (BOTH) - should produce significant effect"""
-    print("\n🧪 Test 4: With confounders, With adjacency matrix (BOTH)")
+    """Test: With adjacency matrix containing confounders - should produce significant effect"""
+    print("\n🧪 Test 4: With adjacency matrix containing confounders")
     print("=" * 60)
     
     mock_analyzer = create_mock_analyzer(with_adjacency_matrix=True)
-    confounders = ['X', 'Z']
     
     # Don't mock the statistical functions - use real calculations
     result = calculate_ate_dowhy(
         analyzer=mock_analyzer,
         treatment='treatment',
-        outcome='outcome',
-        confounders=confounders
+        outcome='outcome'
     )
     
     print("Expected DEBUG messages:")
-    print(f"- confounders provided: {confounders}")
+    print("- Using causal graph structure for confounder identification")
     print("- analyzer has adjacency_matrix: True")
     print("- Using adjacency_matrix to build graph for DoWhy")
-    print(f"- Using user-specified confounders: {confounders}")
+    print("- Confounders will be automatically identified from causal graph structure")
     print("- Passing graph to DoWhy causal model")
     
     assert result is not None
@@ -234,25 +238,23 @@ def test_causal_inference_with_confounders_with_adjacency():
     print("✅ Test 4 completed successfully - BOTH parameters used!")
 
 def test_causal_inference_empty_confounders_list():
-    """Test: Empty confounders list (edge case)"""
-    print("\n🧪 Test 5: Empty confounders list (edge case)")
+    """Test: Edge case testing - should work with adjacency matrix"""
+    print("\n🧪 Test 5: Edge case testing with adjacency matrix")
     print("=" * 60)
     
     mock_analyzer = create_mock_analyzer(with_adjacency_matrix=True)
-    confounders = []  # Empty list vs None
     
     result = calculate_ate_dowhy(
         analyzer=mock_analyzer,
         treatment='treatment',
-        outcome='outcome',
-        confounders=confounders
+        outcome='outcome'
     )
     
     print("Expected DEBUG messages:")
-    print("- confounders provided: []")
+    print("- Using causal graph structure for confounder identification")
     print("- analyzer has adjacency_matrix: True")
     print("- Using adjacency_matrix to build graph for DoWhy")
-    print("- No confounders provided, relying on graph or DoWhy automatic confounder selection")
+    print("- Confounders will be automatically identified from causal graph structure")
     print("- Passing graph to DoWhy causal model")
     
     assert result is not None
@@ -267,8 +269,8 @@ if __name__ == "__main__":
     print("=" * 80)
     
     tests = [
-        ("No confounders, No adjacency matrix", test_causal_inference_no_confounders_no_adjacency),
-        ("With confounders, No adjacency matrix", test_causal_inference_with_confounders_no_adjacency),
+        ("No adjacency matrix", test_causal_inference_no_adjacency),
+        ("With adjacency matrix", test_causal_inference_with_adjacency),
         ("No confounders, With adjacency matrix", test_causal_inference_no_confounders_with_adjacency),
         ("With confounders, With adjacency matrix (BOTH)", test_causal_inference_with_confounders_with_adjacency),
         ("Empty confounders list (edge case)", test_causal_inference_empty_confounders_list),

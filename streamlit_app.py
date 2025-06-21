@@ -125,7 +125,19 @@ def init_session_state():
         'ate_results': None,
         'domain_constraints_generated': False,
         'constraints_data': None,
-        'openai_api_key': ''
+        'openai_api_key': '',
+        'active_data_tab': 0,  # 0 = Upload tab, 1 = Sample tab
+        'previous_outcome_var': None,  # Store previous outcome selection
+        'domain_context_text': '',  # Persist domain context
+        'step4_completed': False,
+        'step4_relationships': None,
+        'traditional_results': None,
+        'comparison_results': None,
+        'constraints_display': None,
+        'data_quality_expanded': False,  # Expander states
+        'step4_expander_state': False,
+        'keep_scroll_position': False,  # Prevent page jumps
+        'last_action': None  # Track last user action
     }
     
     for key, default_value in defaults.items():
@@ -196,15 +208,20 @@ st.markdown("""
 # Step 1: Data Upload
 st.markdown('<div class="step-header"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
 
-# Create tabs for better organization
+# Create tabs for better organization - maintain active tab state
 tab1, tab2 = st.tabs(["📤 Upload Your Own Data", "📊 Use Sample Dataset"])
+
+# Show active data source info above tabs if sample data is loaded
+if st.session_state.get('sample_data_loaded'):
+    st.success(f"✅ **Active Dataset**: {st.session_state['sample_data_loaded']} (loaded from sample data)")
 
 with tab1:
     st.markdown("Upload your Excel or CSV file to begin causal analysis:")
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=['xlsx', 'csv'],
-        help="Ensure your data has clean column names and numeric values for best results."
+        help="Ensure your data has clean column names and numeric values for best results.",
+        key="file_uploader_main"
     )
     
     if uploaded_file:
@@ -234,7 +251,8 @@ with tab2:
                 "Choose a sample dataset:",
                 options=['None'] + sample_files,
                 format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
-                help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis."
+                help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis.",
+                key="sample_dataset_selector"
             )
         
         with col_button:
@@ -248,27 +266,15 @@ with tab2:
                     sample_data = pd.read_csv(sample_file_path)
                     analyzer.data = sample_data
                     
-                    # Set session state
+                    # Set session state without unnecessary rerun to prevent page jump
                     st.session_state['data_loaded'] = True
-                    st.session_state['causal_discovery_completed'] = False
                     st.session_state['sample_data_loaded'] = selected_sample
+                    st.session_state['last_action'] = 'sample_data_loaded'
                     
                     st.success(f"✅ Sample dataset '{selected_sample}' loaded successfully!")
-                    st.rerun()
+                    st.info("📋 Continue to the next steps below to analyze your data.")
                 except Exception as e:
                     st.error(f"❌ Error loading sample dataset: {str(e)}")
-        
-        # Show preview of selected dataset
-        if selected_sample != 'None':
-            with st.expander("📖 Dataset Preview", expanded=False):
-                try:
-                    sample_file_path = os.path.join(sample_data_dir, selected_sample)
-                    preview_data = pd.read_csv(sample_file_path)
-                    st.markdown(f"**Dataset:** {sample_descriptions.get(selected_sample, selected_sample)}")
-                    st.markdown(f"**Size:** {preview_data.shape[0]} rows × {preview_data.shape[1]} columns")
-                    st.dataframe(preview_data.head(3), use_container_width=True)
-                except Exception as e:
-                    st.warning(f"Could not preview dataset: {str(e)}")
                     
     else:
         st.info("No sample datasets found. Run `python create_sample_data.py` to generate sample datasets.")
@@ -293,8 +299,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
     # Show data source info
     if data_source:
         st.info(f"📊 **Data Source**: {data_source}")
-    
-    # Display data preview and quality summary
+      # Display data preview and quality summary 
     show_data_preview(analyzer.data)
     show_data_quality_summary(analyzer.data)
     
@@ -305,21 +310,24 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         # Show sample dataset description
         if sample_name == 'CO2 SupplyChain Demo.csv':
             st.info("""
-            🌱 **Supply Chain CO2 Emissions Analysis**: This dataset examines factors affecting CO2 emissions in agricultural supply chains. 
+            🌱 **Supply Chain CO2 Emissions Analysis**: This dataset examines factors affecting CO2 emissions in agricultural supply chains.
             Variables include transportation method, distance, fuel type, vehicle type, weather conditions, and resulting emissions. 
             The goal is to identify causal factors that could reduce environmental impact in logistics operations.
-            """)
-
-    # Step 2: Domain Constraints
+            """)    # Step 2: Domain Constraints
     st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
     
     domain_context = st.text_area(
         "Describe your domain/business context:",
         placeholder="e.g., 'This is supply chain data where fuel type and vehicle type affect transportation distance and emissions...'",
-        height=100
-    )
+        height=100,
+        key="domain_context_input",
+        value=st.session_state.get('domain_context_text', '')    )
     
-    if st.button("🤖 Generate Domain Constraints", type="secondary"):
+    # Store the domain context in session state
+    if domain_context:
+        st.session_state['domain_context_text'] = domain_context
+    
+    if st.button("🤖 Generate Domain Constraints", type="secondary", key="generate_constraints_btn"):
         if domain_context:
             with st.spinner("AI is analyzing your domain..."):
                 constraints = generate_domain_constraints(
@@ -347,7 +355,13 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                         st.info(f"💡 {warning}")
                 
                 st.session_state['domain_constraints_generated'] = True
+                st.session_state['constraints_display'] = {
+                    'constraints': resolved_constraints,
+                    'explanation': constraints.get('explanation', 'No explanation provided')
+                }
+                st.session_state['last_action'] = 'constraints_generated'
                 
+                # Display constraints immediately after generation
                 col1, col2 = st.columns(2)
                 with col1:
                     display_constraints = resolved_constraints
@@ -359,34 +373,50 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             else:
                 st.error("❌ Failed to generate constraints. Check your API key.")
         else:
-            st.warning("Please provide domain context first.")
-    
-    # Show previously generated constraints
+            st.warning("Please provide domain context first.")# Always show generated constraints prominently if they exist
     if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
-        with st.expander("📋 Current Domain Constraints", expanded=False):
-            st.json(st.session_state['constraints_data'])
-    
-    # Step 3: Causal Discovery
+        st.success("✅ **Domain constraints are active and will be used in causal discovery**")
+        
+        # Always show constraints in a non-collapsible way
+        with st.container():
+            st.markdown("**📋 Active Domain Constraints:**")
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.json(st.session_state['constraints_data'])
+            with col2:
+                if st.session_state.get('constraints_display', {}).get('explanation'):
+                    st.info(f"**Explanation:** {st.session_state['constraints_display']['explanation']}")
+                
+                # Option to clear constraints
+                if st.button("�️ Clear Constraints", key="clear_constraints"):
+                    st.session_state['domain_constraints_generated'] = False
+                    st.session_state['constraints_data'] = None
+                    st.session_state['constraints_display'] = None
+                    st.rerun()
+      # Step 3: Causal Discovery
     st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
-      # Add validation for constraints
+    
+    # Add validation for constraints
     constraints_ready = (
         st.session_state.get('domain_constraints_generated') or 
-        st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints")
+        st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints", key="skip_constraints_checkbox")
     )
     
-    if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready):
+    if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready, key="run_causal_discovery_btn"):
         with st.spinner("Discovering causal relationships..."):
             active_constraints = st.session_state.get('constraints_data', {})
             success = analyzer.run_causal_discovery(active_constraints)
             
         if success:
             st.session_state['causal_discovery_completed'] = True
+            st.session_state['last_action'] = 'discovery_completed'
             st.success("✅ Causal discovery completed!")
             
             if active_constraints:
                 st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
         else:
             st.session_state['causal_discovery_completed'] = False
+            st.session_state['last_action'] = 'discovery_failed'
             st.error("❌ Causal discovery failed")
     
     # Show causal discovery results
@@ -409,45 +439,58 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             # Fallback to original columns if columns not available
             graph_columns = list(analyzer.data.columns)
         
-        show_causal_graph(analyzer.adjacency_matrix, graph_columns)
-    
-    # Step 4: Variable Relationship Analysis
+        show_causal_graph(analyzer.adjacency_matrix, graph_columns)    # Step 4: Variable Relationship Analysis
     st.markdown('<div class="step-header"><h2>📊 Step 4: Variable Relationship Analysis</h2></div>', unsafe_allow_html=True)
     
-    if st.button("🔍 Analyze Variable Relationships", type="secondary"):
-        with st.spinner("Analyzing variable relationships..."):
-            relationships = analyzer.analyze_variable_relationships()
+    # Container for persistent results
+    step4_container = st.container()
+    
+    with step4_container:
+        if st.button("🔍 Analyze Variable Relationships", type="secondary", key="analyze_relationships_btn"):
+            with st.spinner("Analyzing variable relationships..."):
+                relationships = analyzer.analyze_variable_relationships()
+                
+                if relationships:
+                    # Store in session state for persistence
+                    st.session_state['step4_relationships'] = relationships
+                    st.session_state['step4_completed'] = True
+                    st.session_state['last_action'] = 'relationships_analyzed'
+        
+        # Display results if available (persistent across UI updates)
+        if st.session_state.get('step4_completed') and st.session_state.get('step4_relationships'):
+            relationships = st.session_state['step4_relationships']
+            st.success("✅ Relationship analysis completed!")
             
-            if relationships:
-                st.success("✅ Relationship analysis completed!")
-                
-                # Show info about numeric vs categorical variables
-                if 'categorical_columns' in relationships and relationships['categorical_columns']:
-                    st.info(f"📊 Correlation analysis performed on {len(relationships['numeric_columns'])} numeric variables. {len(relationships['categorical_columns'])} categorical variables were excluded.")
-                    with st.expander("ℹ️ Excluded Categorical Variables"):
-                        st.write(f"Categorical variables excluded from correlation analysis: {', '.join(relationships['categorical_columns'])}")
-                
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.subheader("🔥 Correlation Heatmap (Numeric Variables)")
-                    if not relationships['correlation_matrix'].empty:
-                        show_correlation_heatmap(relationships['correlation_matrix'])
-                    else:
-                        st.warning("No numeric data available for correlation analysis")
-                
-                with col2:
-                    st.subheader("💪 Strongest Correlations")
-                    strong_corr = relationships['strong_correlations']
-                    if strong_corr:
-                        st.write(f"Found {len(strong_corr)} strong correlations (|r| > 0.5):")
-                        for corr in strong_corr[:5]:
-                            st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
-                    else:
-                        st.write("No strong correlations (>0.5) found")
-      # Step 5: Causal Inference Analysis
+            # Show info about numeric vs categorical variables
+            if 'categorical_columns' in relationships and relationships['categorical_columns']:
+                st.info(f"📊 Correlation analysis performed on {len(relationships['numeric_columns'])} numeric variables. {len(relationships['categorical_columns'])} categorical variables were excluded.")
+                with st.expander("ℹ️ Excluded Categorical Variables"):
+                    st.write(f"Categorical variables excluded from correlation analysis: {', '.join(relationships['categorical_columns'])}")
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.subheader("🔥 Correlation Heatmap (Numeric Variables)")
+                if not relationships['correlation_matrix'].empty:
+                    show_correlation_heatmap(relationships['correlation_matrix'])
+                else:
+                    st.warning("No numeric data available for correlation analysis")
+            
+            with col2:
+                st.subheader("💪 Strongest Correlations")
+                strong_corr = relationships['strong_correlations']
+                if strong_corr:
+                    st.write(f"Found {len(strong_corr)} strong correlations (|r| > 0.5):")
+                    for corr in strong_corr[:5]:
+                        st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
+                else:
+                    st.write("No strong correlations (>0.5) found")# Step 5: Causal Inference Analysis
     st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
     
-    if analyzer.data is not None and not analyzer.data.empty:
+    # Check if causal discovery has been run
+    if analyzer.adjacency_matrix is None:
+        st.warning("⚠️ **Causal discovery must be run before causal inference.** Please complete Step 3 first.")
+        st.info("💡 **Why this matters:** Causal inference requires understanding the causal structure between variables, which is discovered in Step 3.")
+    elif analyzer.data is not None and not analyzer.data.empty:
         # Get columns for causal analysis
         numeric_columns = analyzer.get_numeric_columns()
         categorical_columns = analyzer.get_categorical_columns()
@@ -455,18 +498,19 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         
         if len(all_columns) < 2:
             st.error("❌ Need at least 2 variables for causal analysis. Please ensure your data contains numeric or categorical columns.")
-        else:
+        else:            
             # Show user which variables are available
             if categorical_columns:
                 st.info(f"ℹ️ **Variable Selection:** {len(numeric_columns)} numeric + {len(categorical_columns)} categorical variables available. Categorical treatments use specialized policy scenarios.")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
                 treatment_var = st.selectbox(
                     "Treatment Variable (Cause)",
                     options=all_columns,
-                    key="treatment_select",                    help="Select a variable that represents the intervention or treatment (both numeric and categorical treatments are supported)"
+                    key="treatment_select",
+                    help="Select a variable that represents the intervention or treatment (both numeric and categorical treatments are supported)"
                 )
             
             with col2:
@@ -475,28 +519,34 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                 if not available_outcomes:
                     st.error("❌ No numeric variables available for outcome. At least one numeric variable is required as the outcome.")
                     st.stop()
+                
+                # Preserve the previous outcome selection if it's still valid
+                previous_outcome = st.session_state.get('previous_outcome_var')
+                default_index = 0
+                
+                if previous_outcome and previous_outcome in available_outcomes:
+                    try:
+                        default_index = available_outcomes.index(previous_outcome)
+                    except ValueError:
+                        default_index = 0
                     
                 outcome_var = st.selectbox(
                     "Outcome Variable (Effect)", 
                     options=available_outcomes,
+                    index=default_index,
                     key="outcome_select",
-                    help="Select a numeric variable that represents the outcome you want to measure"
-                )
+                    help="Select a numeric variable that represents the outcome you want to measure"                )
+                  # Store the current outcome selection for next time
+                st.session_state['previous_outcome_var'] = outcome_var
             
-            with col3:
-                confounders = st.multiselect(
-                    "Confounding Variables",
-                    options=[col for col in all_columns if col not in [treatment_var, outcome_var]],
-                    key="confounders_select",
-                    help="Select variables that might influence both treatment and outcome"
-                )
-            if st.button("🔬 Run Causal Inference", type="primary"):
+            if st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference_btn"):
                 if treatment_var != outcome_var:
                     with st.spinner("Running causal inference..."):
-                        ate_results = analyzer.calculate_ate(treatment_var, outcome_var, confounders)
+                        ate_results = analyzer.calculate_ate(treatment_var, outcome_var)
                         st.session_state['ate_results'] = ate_results
                         st.session_state['selected_treatment'] = treatment_var
                         st.session_state['selected_outcome'] = outcome_var
+                        st.session_state['last_action'] = 'inference_completed'
                 else:
                     st.error("❌ Please select different variables for treatment and outcome")
     
@@ -518,38 +568,68 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             )
         
         with col2:
-            st.info(f"**Interpretation:** {ate_results['interpretation']}")        # Detailed results
-        st.subheader("🔍 Detailed Results by Method")
+            st.info(f"**Interpretation:** {ate_results['interpretation']}")        # Detailed results        st.subheader("🔍 Detailed Results by Method")
         show_results_table(ate_results)
-          # Causal AI vs Traditional Analysis Comparison
-        st.markdown('<div class="step-header"><h2>⚖️ Step 5.5: Causal AI vs Traditional Analysis</h2></div>', unsafe_allow_html=True)
+          # Additional Information: Compare with Traditional Methods
+        st.markdown("### 🔬 Compare with Traditional Statistical Methods")
+        st.markdown("*Optional: See how causal AI results compare to traditional approaches*")
         
-        with st.expander("🔬 **Compare with Traditional Statistical Methods**", expanded=False):
-            st.info("💡 **Why This Matters:** See how causal AI results differ from traditional statistical approaches that companies typically use.")
+        # Show comparison button and results in a persistent container
+        comparison_container = st.container()
+        with comparison_container:
+            if not st.session_state.get('traditional_results'):
+                if st.button("🔄 Run Traditional Analysis Comparison", type="secondary", key="run_traditional_comparison"):
+                    with st.spinner("Running traditional statistical analysis..."):
+                        from utils.traditional_analysis import run_traditional_analysis, compare_causal_vs_traditional
+                        
+                        # Run traditional analysis
+                        traditional_results = run_traditional_analysis(analyzer, treatment_var, outcome_var)
+                        
+                        # Compare results
+                        comparison = compare_causal_vs_traditional(ate_results, traditional_results, treatment_var, outcome_var)
+                          # Store results in session state
+                        st.session_state['traditional_results'] = traditional_results
+                        st.session_state['comparison_results'] = comparison
+                        st.session_state['last_action'] = 'traditional_analysis_completed'
+                        st.rerun()  # Refresh to show results
             
-            if st.button("🔄 Run Traditional Analysis Comparison", type="secondary"):
-                with st.spinner("Running traditional statistical analysis..."):
-                    from utils.traditional_analysis import run_traditional_analysis, compare_causal_vs_traditional
-                    
-                    # Run traditional analysis
-                    traditional_results = run_traditional_analysis(analyzer, treatment_var, outcome_var, confounders)
-                    
-                    # Compare results
-                    comparison = compare_causal_vs_traditional(ate_results, traditional_results, treatment_var, outcome_var)
-                    
-                    # Store results in session state
-                    st.session_state['traditional_results'] = traditional_results
-                    st.session_state['comparison_results'] = comparison
-            
-            # Display comparison results if available
+            # Always display results if available (persistent across all interactions)
             if st.session_state.get('traditional_results') and st.session_state.get('comparison_results'):
-                show_traditional_comparison(
-                    st.session_state['traditional_results'], 
-                    st.session_state['comparison_results'],
-                    ate_results,
-                    treatment_var,
-                    outcome_var
-                )
+                st.success("✅ Traditional analysis comparison completed!")
+                
+                trad_results = st.session_state['traditional_results']
+                comp_results = st.session_state['comparison_results']
+                
+                # Simple comparison table
+                causal_estimate = ate_results.get('consensus_estimate', 0)
+                
+                st.markdown("**Method Comparison:**")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("🧠 Causal AI", f"{causal_estimate:.4f}")
+                with col2:
+                    if 'correlation' in trad_results['methods']:
+                        corr_est = trad_results['methods']['correlation'].get('estimate', 0)
+                        st.metric("📈 Correlation", f"{corr_est:.4f}")
+                with col3:
+                    if 'simple_regression' in trad_results['methods']:
+                        reg_est = trad_results['methods']['simple_regression'].get('estimate', 0)
+                        st.metric("📊 Simple Regression", f"{reg_est:.4f}")
+                with col4:
+                    if st.button("🗑️ Clear Comparison", key="clear_comparison"):
+                        st.session_state['traditional_results'] = None
+                        st.session_state['comparison_results'] = None
+                        st.rerun()
+                
+                # Single key insight
+                if comp_results['key_differences']:
+                    max_diff = max([diff['percent_difference'] for diff in comp_results['key_differences']])
+                    if max_diff > 20:
+                        st.info(f"💡 **Key Insight**: Causal AI differs by up to {max_diff:.0f}% from traditional methods, accounting for confounding factors that traditional methods miss.")
+                    else:
+                        st.success("✅ **Consistent results** across methods")
+                else:
+                    st.success("✅ **Consistent results** across methods")
           # Step 6: Interactive Policy Explorer - only if we have a meaningful effect
         if abs(ate_results['consensus_estimate']) > 0.01:  # Only show if we have a meaningful effect
             st.markdown('<div class="step-header"><h2>🎮 Step 6: Interactive Policy Explorer</h2></div>', unsafe_allow_html=True)
@@ -563,7 +643,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
         
         # Show button only if API key is available
         if st.session_state.get('openai_api_key'):
-            if st.button("🤖 Get Detailed AI Analysis", type="secondary"):
+            if st.button("🤖 Get Detailed AI Analysis", type="secondary", key="get_ai_analysis_btn"):
                 with st.spinner("AI is analyzing your results..."):
                     explanation = explain_results_with_llm(
                         ate_results, treatment_var, outcome_var,

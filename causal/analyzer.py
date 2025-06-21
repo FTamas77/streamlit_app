@@ -225,26 +225,25 @@ class CausalAnalyzer:
             st.error(f"Causal discovery failed: {str(e)}")
             return False
 
-    def calculate_ate(self, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
+    def calculate_ate(self, treatment: str, outcome: str) -> Dict:
         """
-        Calculate Average Treatment Effect using DoWhy with comprehensive validation
+        Calculate Average Treatment Effect using DoWhy with comprehensive validation.
+        
+        Note: This method requires causal discovery to have been run first.
+        Confounders are automatically identified from the causal graph structure.
         
         Args:
             treatment: Name of the treatment variable
-            outcome: Name of the outcome variable  
-            confounders: List of confounder variable names (optional)
-                        If provided, these will be used as adjustment variables.
-                        If None, confounders will be identified from the graph structure.
+            outcome: Name of the outcome variable
         
         Returns:
             Dict containing causal effect estimates and metadata
             
         Raises:
-            ValueError: If inputs are invalid or data is insufficient
+            ValueError: If inputs are invalid, data is insufficient, or causal discovery not run
             ImportError: If DoWhy is not available
             RuntimeError: If causal inference fails
-        """
-        # Pre-validation checks
+        """        # Pre-validation checks
         if not DOWHY_AVAILABLE:
             raise ImportError("DoWhy is required for ATE calculation but not available. Please install DoWhy.")
         
@@ -252,7 +251,9 @@ class CausalAnalyzer:
             raise ValueError("No data loaded. Please load data before calculating ATE.")
         
         if self.data.empty:
-            raise ValueError("Data is empty. Cannot calculate ATE.")
+            raise ValueError("Data is empty. Cannot calculate ATE.")        # Check if causal discovery has been run
+        if self.adjacency_matrix is None:
+            raise ValueError("Causal discovery must be run before causal inference. Please run causal discovery first.")
         
         # Input validation
         if not treatment or not isinstance(treatment, str):
@@ -262,8 +263,7 @@ class CausalAnalyzer:
             raise ValueError(f"Outcome must be a non-empty string, got: {outcome}")
         
         if treatment == outcome:
-            raise ValueError("Treatment and outcome variables cannot be the same")
-        
+            raise ValueError("Treatment and outcome variables cannot be the same")        
         # Get available columns for validation
         available_columns = set(self.data.columns)
         if hasattr(self.discovery, 'encoded_data') and self.discovery.encoded_data is not None:
@@ -276,20 +276,6 @@ class CausalAnalyzer:
         if outcome not in available_columns:
             missing_vars.append(f"outcome '{outcome}'")
         
-        if confounders:
-            if not isinstance(confounders, list):
-                raise ValueError("Confounders must be a list or None")
-            
-            for conf in confounders:
-                if not isinstance(conf, str):
-                    raise ValueError(f"All confounders must be strings, got: {type(conf)} for {conf}")
-                if conf not in available_columns:
-                    missing_vars.append(f"confounder '{conf}'")
-                if conf == treatment:
-                    raise ValueError(f"Treatment variable '{treatment}' cannot be included as a confounder")
-                if conf == outcome:
-                    raise ValueError(f"Outcome variable '{outcome}' cannot be included as a confounder")
-        
         if missing_vars:
             available_list = sorted(list(available_columns))
             raise ValueError(f"Variables not found: {', '.join(missing_vars)}. Available columns: {available_list}")
@@ -297,7 +283,7 @@ class CausalAnalyzer:
         # Data quality checks
         try:
             # Check if we have sufficient data for the analysis
-            analysis_cols = [treatment, outcome] + (confounders or [])
+            analysis_cols = [treatment, outcome]
             
             # Determine which dataset to check
             data_to_check = self.data
@@ -333,11 +319,10 @@ class CausalAnalyzer:
                 raise
             else:
                 raise RuntimeError(f"Data validation failed: {str(e)}") from e
-        
-        # All validation passed - proceed with ATE calculation
+          # All validation passed - proceed with ATE calculation
         try:
             from causal.inference import calculate_ate_dowhy
-            result = calculate_ate_dowhy(self, treatment, outcome, confounders)
+            result = calculate_ate_dowhy(self, treatment, outcome)
             
             # Additional result validation
             if not isinstance(result, dict):

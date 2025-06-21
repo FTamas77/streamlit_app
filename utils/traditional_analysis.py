@@ -5,15 +5,14 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder
 import warnings
 
-def run_traditional_analysis(analyzer, treatment, outcome, confounders=None):
+def run_traditional_analysis(analyzer, treatment, outcome):
     """
     Run traditional statistical analysis for comparison with causal inference.
     
     Args:
         analyzer: CausalAnalyzer instance with data
         treatment: Treatment variable name
-        outcome: Outcome variable name  
-        confounders: List of confounder variable names (ignored in some traditional methods)
+        outcome: Outcome variable name
         
     Returns:
         Dict with traditional analysis results
@@ -90,8 +89,17 @@ def run_traditional_analysis(analyzer, treatment, outcome, confounders=None):
             'name': 'Simple Linear Regression',
             'error': str(e)
         }
+      # 3. Multiple Linear Regression (with available confounders from causal discovery)
+    # If causal discovery was run, use confounders identified from the graph
+    confounders = []
+    if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
+        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
+            # Get all variables except treatment and outcome as potential confounders
+            all_vars = list(analyzer.discovery.columns)
+            confounders = [var for var in all_vars if var not in [treatment, outcome]]
+            if confounders:
+                print(f"DEBUG: Using confounders from causal graph: {confounders}")
     
-    # 3. Multiple Linear Regression (with confounders, if provided)
     if confounders and len(confounders) > 0:
         try:
             # Prepare features including confounders

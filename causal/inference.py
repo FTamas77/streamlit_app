@@ -9,20 +9,19 @@ try:
 except ImportError:
     DOWHY_AVAILABLE = False
 
-def _adjacency_to_dowhy_dot_graph(adjacency_matrix, columns, treatment: str, outcome: str, confounders: list = None):
+def _adjacency_to_dowhy_dot_graph(adjacency_matrix, columns, treatment: str, outcome: str):
     """Convert adjacency matrix to DOT graph format for DoWhy - properly interpret DirectLiNGAM matrix"""
     if adjacency_matrix is None or not hasattr(adjacency_matrix, 'shape'):
         print("DEBUG: adjacency_matrix is None or has no shape")
         return None
     
     print(f"DEBUG: Creating DOT graph for columns: {columns}")
-    print(f"DEBUG: Treatment: {treatment}, Outcome: {outcome}, Confounders: {confounders}")
-    print(f"DEBUG: Adjacency matrix shape: {adjacency_matrix.shape}")
-        
+    print(f"DEBUG: Treatment: {treatment}, Outcome: {outcome}")
+    print(f"DEBUG: Adjacency matrix shape: {adjacency_matrix.shape}")        
     dot_graph = 'digraph {\n'
 
     # Declare nodes with valid DOT syntax
-    all_nodes = set([treatment, outcome] + (confounders or []))
+    all_nodes = set([treatment, outcome])
     for node in all_nodes:
         dot_graph += f'"{node}";\n'
 
@@ -80,8 +79,8 @@ def _interpret_ate(ate_value: float, treatment: str, outcome: str) -> str:
         
     return f"A one-unit increase in {treatment} {direction} {outcome} by {abs(ate_value):.4f} units on average."
 
-def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: List[str] = None) -> Dict:
-    """Calculate ATE using DoWhy - always uses confounders if provided, always uses adjacency matrix if present, with debug messages"""
+def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
+    """Calculate ATE using DoWhy - uses causal graph structure automatically, with debug messages"""
     if not DOWHY_AVAILABLE:
         raise ImportError("DoWhy is required for ATE calculation but not available")
     
@@ -97,16 +96,6 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
     
     if treatment == outcome:
         raise ValueError("Treatment and outcome variables cannot be the same")
-    
-    if confounders is not None:
-        if not isinstance(confounders, list):
-            raise ValueError("Confounders must be a list or None")
-        if treatment in confounders:
-            raise ValueError("Treatment variable cannot be included as a confounder")
-        if outcome in confounders:
-            raise ValueError("Outcome variable cannot be included as a confounder")
-        # Remove duplicates while preserving order
-        confounders = list(dict.fromkeys(confounders))
     
     # Check if analyzer has required data
     if not hasattr(analyzer, 'data') or analyzer.data is None:
@@ -131,11 +120,10 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
                 return {}
             def classify_effect_size(effect):
                 return "unknown"
-        
-        # Debug: show what parameters are present
+          # Debug: show what parameters are present
         print(f"DEBUG: ================ CAUSAL INFERENCE DEBUG ================")
         print(f"DEBUG: calculate_ate_dowhy called with treatment={treatment}, outcome={outcome}")
-        print(f"DEBUG: confounders provided: {confounders}")
+        print(f"DEBUG: Using causal graph structure for confounder identification")
         print(f"DEBUG: analyzer has adjacency_matrix: {hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None}")
         
         # Debug: Check data being used
@@ -198,11 +186,9 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         graph_uses_encoded = False
         if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
             graph_uses_encoded = True
-        
-        # If the graph uses encoded variables OR we have encoded variables in treatment/outcome/confounders
+          # If the graph uses encoded variables OR we have encoded variables in treatment/outcome
         if (graph_uses_encoded or 
-            treatment.endswith('_Code') or outcome.endswith('_Code') or 
-            (confounders and any(c.endswith('_Code') for c in confounders))):
+            treatment.endswith('_Code') or outcome.endswith('_Code')):
             if hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
                 print(f"DEBUG: Using encoded data because graph uses encoded variables")
                 data_to_use = analyzer.discovery.encoded_data
@@ -247,20 +233,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
             elif outcome_data.nunique() < 2:
                 invalid_vars.append(f"outcome '{outcome}' has insufficient variation (only {outcome_data.nunique()} unique values)")
             elif not np.issubdtype(outcome_data.dtype, np.number):
-                invalid_vars.append(f"outcome '{outcome}' is not numeric (type: {outcome_data.dtype})")
-          # Check confounder variables
-        if confounders:
-            for conf in confounders:
-                if conf not in data_columns:
-                    missing_vars.append(f"confounder '{conf}'")
-                else:
-                    # Validate confounder characteristics
-                    conf_data = data_to_use[conf]
-                    if conf_data.isnull().all():
-                        invalid_vars.append(f"confounder '{conf}' contains only null values")
-                    elif not np.issubdtype(conf_data.dtype, np.number):
-                        invalid_vars.append(f"confounder '{conf}' is not numeric (type: {conf_data.dtype})")
-        
+                invalid_vars.append(f"outcome '{outcome}' is not numeric (type: {outcome_data.dtype})")        
         # Report validation errors
         if missing_vars:
             error_msg = f"Variables not found in {'encoded' if use_encoded_data else 'original'} data: {', '.join(missing_vars)}"
@@ -274,7 +247,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
             raise ValueError(error_msg)
         
         # Check for sufficient data
-        non_null_rows = data_to_use[[treatment, outcome] + (confounders or [])].dropna()
+        non_null_rows = data_to_use[[treatment, outcome]].dropna()
         if len(non_null_rows) < 10:
             error_msg = f"Insufficient data after removing null values: only {len(non_null_rows)} rows available (minimum 10 required)"
             print(f"DEBUG: ERROR: {error_msg}")
@@ -352,8 +325,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
                     analyzer.adjacency_matrix, 
                     graph_columns, 
                     treatment, 
-                    outcome, 
-                    confounders
+                    outcome
                 )
                 graph = dot_graph
             else:
@@ -361,16 +333,13 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str, confounders: Lis
         else:
             print("DEBUG: No adjacency_matrix available, not passing graph to DoWhy")
         
-        # Always use confounders if provided
-        if confounders:
-            print(f"DEBUG: Using user-specified confounders: {confounders}")
-        else:
-            print("DEBUG: No confounders provided, relying on graph or DoWhy automatic confounder selection")        # Create causal model - only pass graph if we have one
+        # Confounders will be automatically identified from the causal graph
+        print("DEBUG: Confounders will be automatically identified from causal graph structure")        # Create causal model - only pass graph if we have one
         causal_model_args = {
             'data': data_to_use,  # Use the appropriate dataset
             'treatment': treatment,
             'outcome': outcome,
-            'common_causes': confounders if confounders else None
+            'common_causes': None  # Let DoWhy identify confounders automatically from graph
         }
         
         if graph is not None:
