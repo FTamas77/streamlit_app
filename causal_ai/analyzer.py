@@ -5,7 +5,7 @@ from typing import Dict, List
 import streamlit as st
 
 # Import our new discovery module
-from causal.discovery import CausalDiscovery
+from causal_ai.discovery import CausalDiscovery
 
 # Try to import optional dependencies
 try:
@@ -321,7 +321,7 @@ class CausalAnalyzer:
                 raise RuntimeError(f"Data validation failed: {str(e)}") from e
           # All validation passed - proceed with ATE calculation
         try:
-            from causal.inference import calculate_ate_dowhy
+            from causal_ai.inference import calculate_ate_dowhy
             result = calculate_ate_dowhy(self, treatment, outcome)
             
             # Additional result validation

@@ -16,7 +16,7 @@ import os
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
 
-from causal.analyzer import CausalAnalyzer
+from causal_ai.analyzer import CausalAnalyzer
 from llm.llm import generate_domain_constraints, explain_results_with_llm
 from ui.components import show_data_preview, show_data_quality_summary, show_correlation_heatmap, show_causal_graph, show_results_table, show_interactive_scenario_explorer, show_traditional_comparison
 
@@ -126,6 +126,8 @@ def init_session_state():
         'domain_constraints_generated': False,
         'constraints_data': None,
         'openai_api_key': '',
+        'api_key_valid': False,
+        'last_verified_key': '',
         'active_data_tab': 0,  # 0 = Upload tab, 1 = Sample tab
         'previous_outcome_var': None,  # Store previous outcome selection
         'domain_context_text': '',  # Persist domain context
@@ -137,7 +139,11 @@ def init_session_state():
         'data_quality_expanded': False,  # Expander states
         'step4_expander_state': False,
         'keep_scroll_position': False,  # Prevent page jumps
-        'last_action': None  # Track last user action
+        'last_action': None,  # Track last user action
+        # Simple constraint approval variables
+        'suggested_constraints': None,  # Store AI suggestions
+        'constraints_generated': False,  # Flag for showing approval interface
+        'manual_constraints': {"forbidden_edges": [], "required_edges": []}  # Manual constraints
     }
     
     for key, default_value in defaults.items():
@@ -150,17 +156,45 @@ init_session_state()
 # Sidebar
 with st.sidebar:
     st.markdown("### 🔧 Configuration")
-    
-    # API Key input
+      # API Key input with automatic verification
     api_key = st.text_input(
         "OpenAI API Key", 
         type="password", 
-        help="Required for LLM-guided domain constraints and insights",
-        value=st.session_state.get('openai_api_key', '')    )
+        help="Required for AI-powered constraint generation",
+        value=st.session_state.get('openai_api_key', ''),
+        placeholder="sk-proj-..."
+    )
     
+    # Auto-verify API key when it changes
+    if api_key and api_key != st.session_state.get('last_verified_key', ''):
+        with st.spinner("Verifying API key..."):
+            try:
+                import openai
+                client = openai.OpenAI(api_key=api_key)
+                # Quick test call to verify the key works
+                response = client.models.list()
+                st.session_state['api_key_valid'] = True
+                st.session_state['last_verified_key'] = api_key
+            except Exception as e:
+                st.session_state['api_key_valid'] = False
+                st.session_state['last_verified_key'] = api_key
+    elif not api_key:
+        st.session_state['api_key_valid'] = False
+        st.session_state['last_verified_key'] = ''
+    
+    # Save API key to session state and show status
     if api_key:
         st.session_state['openai_api_key'] = api_key
-        st.success("✅ API Key saved for this session")
+        
+        # Show clean status indicator
+        if st.session_state.get('api_key_valid'):
+            st.caption("🟢 API key verified and ready")
+        elif api_key == st.session_state.get('last_verified_key', ''):
+            st.caption("❌ API key invalid")
+        else:
+            st.caption("🟡 Verifying...")
+    else:
+        st.caption("🔑 Enter API key above")
 
 # Sidebar: Core Methodology
 with st.sidebar:
@@ -213,7 +247,11 @@ tab1, tab2 = st.tabs(["📤 Upload Your Own Data", "📊 Use Sample Dataset"])
 
 # Show active data source info above tabs if sample data is loaded
 if st.session_state.get('sample_data_loaded'):
-    st.success(f"✅ **Active Dataset**: {st.session_state['sample_data_loaded']} (loaded from sample data)")
+    # More prominent display for recently loaded data
+    if st.session_state.get('last_action') == 'sample_data_loaded':
+        st.success(f"🎉 **Dataset Ready**: {st.session_state['sample_data_loaded']} is now loaded and ready for analysis!")
+    else:
+        st.success(f"✅ **Active Dataset**: {st.session_state['sample_data_loaded']} (loaded from sample data)")
 
 with tab1:
     st.markdown("Upload your Excel or CSV file to begin causal analysis:")
@@ -253,8 +291,7 @@ with tab2:
                 format_func=lambda x: 'Select a dataset...' if x == 'None' else sample_descriptions.get(x, x),
                 help="Sample dataset demonstrates causal relationships in supply chain logistics and environmental impact analysis.",
                 key="sample_dataset_selector"
-            )
-        
+            )        
         with col_button:
             st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
             load_button_disabled = selected_sample == 'None'
@@ -266,13 +303,13 @@ with tab2:
                     sample_data = pd.read_csv(sample_file_path)
                     analyzer.data = sample_data
                     
-                    # Set session state without unnecessary rerun to prevent page jump
+                    # Set session state
                     st.session_state['data_loaded'] = True
                     st.session_state['sample_data_loaded'] = selected_sample
                     st.session_state['last_action'] = 'sample_data_loaded'
                     
-                    st.success(f"✅ Sample dataset '{selected_sample}' loaded successfully!")
-                    st.info("📋 Continue to the next steps below to analyze your data.")
+                    # Trigger rerun to show the persistent success message above
+                    st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error loading sample dataset: {str(e)}")
                     
@@ -296,10 +333,7 @@ elif st.session_state.get('sample_data_loaded'):
 # Show data info if data is loaded
 if st.session_state.get('data_loaded') and analyzer.data is not None:
     
-    # Show data source info
-    if data_source:
-        st.info(f"📊 **Data Source**: {data_source}")
-      # Display data preview and quality summary 
+    # Display data preview and quality summary 
     show_data_preview(analyzer.data)
     show_data_quality_summary(analyzer.data)
     
@@ -313,87 +347,109 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             🌱 **Supply Chain CO2 Emissions Analysis**: This dataset examines factors affecting CO2 emissions in agricultural supply chains.
             Variables include transportation method, distance, fuel type, vehicle type, weather conditions, and resulting emissions. 
             The goal is to identify causal factors that could reduce environmental impact in logistics operations.
-            """)    # Step 2: Domain Constraints
+            """)    # Step 2: Domain Constraints (AI-Powered)
     st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
     
     domain_context = st.text_area(
         "Describe your domain/business context:",
-        placeholder="e.g., 'This is supply chain data where fuel type and vehicle type affect transportation distance and emissions...'",
+        placeholder="e.g., 'Distance causes CO2 emissions; Weather cannot affect fuel consumption'",
         height=100,
         key="domain_context_input",
-        value=st.session_state.get('domain_context_text', '')    )
+        value=st.session_state.get('domain_context_text', '')
+    )
     
-    # Store the domain context in session state
+    # Show help for writing domain constraints
+    with st.expander("💡 How to Write Good Domain Constraints", expanded=False):
+        from llm.llm import get_domain_constraints_help
+        st.markdown(get_domain_constraints_help())
+      # Store the domain context in session state
     if domain_context:
         st.session_state['domain_context_text'] = domain_context
     
-    if st.button("🤖 Generate Domain Constraints", type="secondary", key="generate_constraints_btn"):
-        if domain_context:
-            with st.spinner("AI is analyzing your domain..."):
-                constraints = generate_domain_constraints(
-                    list(analyzer.data.columns), 
-                    domain_context,
-                    st.session_state.get('openai_api_key')
-                )                
-            if constraints and constraints.get('explanation') != "No API key provided":
-                # Validate constraints for conflicts
-                from causal.discovery_constraints import validate_constraints
-                validation = validate_constraints(constraints)                    
-                if validation['conflicts']:
-                    st.warning("⚠️ Constraint conflicts detected - they will be automatically resolved")
-                    for conflict in validation['conflicts']:
-                        st.warning(f"🚨 {conflict['description']} → Required edge will take precedence")
-                    st.session_state['constraints_data'] = validation['resolved_constraints']
-                    resolved_constraints = validation['resolved_constraints']
-                else:
-                    st.success("✅ Domain constraints generated!")
-                    st.session_state['constraints_data'] = constraints
-                    resolved_constraints = constraints
-                
-                if validation['warnings']:
-                    for warning in validation['warnings']:
-                        st.info(f"💡 {warning}")
-                
-                st.session_state['domain_constraints_generated'] = True
-                st.session_state['constraints_display'] = {
-                    'constraints': resolved_constraints,
-                    'explanation': constraints.get('explanation', 'No explanation provided')
-                }
-                st.session_state['last_action'] = 'constraints_generated'
-                
-                # Display constraints immediately after generation
-                col1, col2 = st.columns(2)
-                with col1:
-                    display_constraints = resolved_constraints
-                    st.json(display_constraints)
-                with col2:
-                    st.info(f"**Explanation:** {constraints.get('explanation', 'No explanation provided')}")
-                
-                analyzer.domain_constraints = resolved_constraints
-            else:
-                st.error("❌ Failed to generate constraints. Check your API key.")
+    if st.button("Generate AI Constraints", type="secondary", key="generate_constraints_btn"):
+        if domain_context.strip():
+            # Clear any existing constraints to start fresh
+            st.session_state['constraints_generated'] = False
+            st.session_state['domain_constraints_generated'] = False
+            st.session_state['constraints_data'] = None
+            
+            with st.spinner("Analyzing domain context..."):
+                try:
+                    suggested_constraints = generate_domain_constraints(
+                        list(analyzer.data.columns), 
+                        domain_context,
+                        st.session_state.get('openai_api_key')                    )
+                    
+                    if suggested_constraints and (suggested_constraints.get('forbidden_edges') or suggested_constraints.get('required_edges')):
+                        st.session_state['suggested_constraints'] = suggested_constraints
+                        st.session_state['constraints_generated'] = True
+                    else:
+                        st.warning("No specific constraints extracted from context")
+                        
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
         else:
-            st.warning("Please provide domain context first.")# Always show generated constraints prominently if they exist
-    if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
-        st.success("✅ **Domain constraints are active and will be used in causal discovery**")
+            st.error("Domain context required")
+      # Show simple approval interface if constraints were generated
+    if st.session_state.get('constraints_generated') and st.session_state.get('suggested_constraints'):
+        from llm.llm import display_simple_constraint_approval
         
-        # Always show constraints in a non-collapsible way
-        with st.container():
-            st.markdown("**📋 Active Domain Constraints:**")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.json(st.session_state['constraints_data'])
-            with col2:
-                if st.session_state.get('constraints_display', {}).get('explanation'):
-                    st.info(f"**Explanation:** {st.session_state['constraints_display']['explanation']}")
-                
-                # Option to clear constraints
-                if st.button("�️ Clear Constraints", key="clear_constraints"):
-                    st.session_state['domain_constraints_generated'] = False
-                    st.session_state['constraints_data'] = None
-                    st.session_state['constraints_display'] = None
-                    st.rerun()
-      # Step 3: Causal Discovery
+        # Get user approval/rejection
+        approved_constraints = display_simple_constraint_approval(st.session_state['suggested_constraints'])        # Action buttons stacked vertically
+        if st.button("Apply Selected", type="primary", key="apply_constraints"):
+            st.session_state['constraints_data'] = approved_constraints
+            st.session_state['domain_constraints_generated'] = True
+            st.session_state['constraints_generated'] = False
+            analyzer.domain_constraints = approved_constraints
+            st.rerun()
+        
+        if st.button("Skip All", key="skip_all"):
+            st.session_state['constraints_generated'] = False
+            st.rerun()
+    
+    # Manual constraint builder
+    with st.expander("Manual Constraints", expanded=False):
+        from llm.llm import display_manual_constraint_builder, combine_ai_and_manual_constraints
+        
+        manual_constraints = display_manual_constraint_builder(list(analyzer.data.columns))
+        
+        # Store manual constraints in session state for preview
+        if manual_constraints['required_edges'] or manual_constraints['forbidden_edges']:
+            st.session_state['manual_constraints'] = manual_constraints
+            
+            # Auto-apply manual constraints if they exist
+            if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
+                # Combine with existing AI constraints
+                ai_constraints = st.session_state['constraints_data']
+                combined = combine_ai_and_manual_constraints(ai_constraints, manual_constraints)
+                st.session_state['constraints_data'] = combined
+                analyzer.domain_constraints = combined
+            else:
+                # Apply manual constraints only
+                st.session_state['constraints_data'] = manual_constraints
+                st.session_state['domain_constraints_generated'] = True
+                analyzer.domain_constraints = manual_constraints# Show active constraints in a single, clean display
+    if st.session_state.get('domain_constraints_generated') and st.session_state.get('constraints_data'):
+        constraints_data = st.session_state['constraints_data']
+        num_required = len(constraints_data.get('required_edges', []))
+        num_forbidden = len(constraints_data.get('forbidden_edges', []))
+        
+        # Single success message with constraint details
+        constraint_details = []
+        
+        if num_required > 0:
+            for edge in constraints_data['required_edges']:
+                constraint_details.append(f"✅ **{edge[0]}** causes **{edge[1]}**")
+        
+        if num_forbidden > 0:
+            for edge in constraints_data['forbidden_edges']:
+                constraint_details.append(f"🚫 **{edge[0]}** cannot cause **{edge[1]}**")        # Combined display
+        if constraint_details:
+            st.markdown("**Active Constraints:**")
+            # Display each constraint on a separate line
+            for detail in constraint_details:
+                st.markdown(f"• {detail}")
+    # Step 3: Causal Discovery
     st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
     
     # Add validation for constraints

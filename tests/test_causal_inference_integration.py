@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import Mock, patch
-from causal.inference import calculate_ate_dowhy
+from causal_ai.inference import calculate_ate_dowhy
 
 def create_mock_analyzer(with_adjacency_matrix=False):
     """Create a mock analyzer with realistic causal data for testing"""
@@ -96,7 +96,7 @@ def test_causal_inference_no_adjacency():
     print("\n🧪 Test 1: No adjacency matrix")
     print("=" * 60)
     
-    from causal.analyzer import CausalAnalyzer
+    from causal_ai.analyzer import CausalAnalyzer
     
     # Create a real analyzer without running discovery
     analyzer = CausalAnalyzer()

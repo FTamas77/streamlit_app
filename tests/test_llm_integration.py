@@ -28,12 +28,18 @@ def validate_constraint_structure(constraints):
     required_keys = ['forbidden_edges', 'required_edges']
     for key in required_keys:
         assert key in constraints, f"Missing required key: {key}"
-    
-    # Validate forbidden_edges structure
+      # Validate forbidden_edges structure
     forbidden = constraints['forbidden_edges']
     assert isinstance(forbidden, list), f"forbidden_edges must be list, got {type(forbidden)}"
     
-    for edge in forbidden:
+    for edge_item in forbidden:
+        # Handle both dict format with reasoning and simple list format
+        if isinstance(edge_item, dict):
+            assert 'edge' in edge_item, f"Edge dict must have 'edge' key, got {edge_item.keys()}"
+            edge = edge_item['edge']
+        else:
+            edge = edge_item
+            
         assert isinstance(edge, list), f"Each forbidden edge must be list, got {type(edge)}"
         assert len(edge) == 2, f"Each edge must have 2 elements [source, target], got {len(edge)}"
         assert isinstance(edge[0], str), f"Source must be string, got {type(edge[0])}"
@@ -43,7 +49,14 @@ def validate_constraint_structure(constraints):
     required = constraints['required_edges']
     assert isinstance(required, list), f"required_edges must be list, got {type(required)}"
     
-    for edge in required:
+    for edge_item in required:
+        # Handle both dict format with reasoning and simple list format
+        if isinstance(edge_item, dict):
+            assert 'edge' in edge_item, f"Edge dict must have 'edge' key, got {edge_item.keys()}"
+            edge = edge_item['edge']
+        else:
+            edge = edge_item
+            
         assert isinstance(edge, list), f"Each required edge must be list, got {type(edge)}"
         assert len(edge) == 2, f"Each edge must have 2 elements [source, target], got {len(edge)}"
         assert isinstance(edge[0], str), f"Source must be string, got {type(edge[0])}"
@@ -98,20 +111,31 @@ def test_constraint_structure_consistency():
     
     # Validate structure compatibility with causal discovery
     validate_constraint_structure(constraints)
-    
-    # Test that edges reference actual columns
+      # Test that edges reference actual columns
     all_edges = constraints['forbidden_edges'] + constraints['required_edges']
-    for edge in all_edges:
+    for edge_item in all_edges:
+        # Handle both dict format with reasoning and simple list format
+        if isinstance(edge_item, dict):
+            edge = edge_item['edge']
+        else:
+            edge = edge_item
+            
         source, target = edge
         assert source in columns, f"Source '{source}' not in dataset columns: {columns}"
-        assert target in columns, f"Target '{target}' not in dataset columns: {columns}"
-      # Test constraint logic makes sense
+        assert target in columns, f"Target '{target}' not in dataset columns: {columns}"    # Test constraint logic makes sense
     forbidden_edges = constraints['forbidden_edges']
     required_edges = constraints['required_edges']
     
     # Check for conflicts between forbidden and required
-    forbidden_set = {(edge[0], edge[1]) for edge in forbidden_edges}
-    required_set = {(edge[0], edge[1]) for edge in required_edges}
+    def extract_edge_tuple(edge_item):
+        if isinstance(edge_item, dict):
+            edge = edge_item['edge']
+        else:
+            edge = edge_item
+        return (edge[0], edge[1])
+    
+    forbidden_set = {extract_edge_tuple(edge) for edge in forbidden_edges}
+    required_set = {extract_edge_tuple(edge) for edge in required_edges}
     conflict = forbidden_set.intersection(required_set)
     
     if len(conflict) > 0:
@@ -245,9 +269,8 @@ def test_constraint_compatibility_with_discovery():
     This tests the end-to-end integration pipeline.
     """
     print("🧪 Testing constraint compatibility with causal discovery...")
-    
-    # Import causal discovery to test integration
-    from causal.discovery_constraints import create_prior_knowledge_matrix
+      # Import causal discovery to test integration
+    from causal_ai.discovery_constraints import create_prior_knowledge_matrix
     import numpy as np
       # Test constraint structure that matches both LLM output and discovery input
     test_constraints = {
@@ -284,7 +307,7 @@ def test_constraint_conflict_resolution():
     print("\n" + "="*50)
     print("🚨 Testing Constraint Conflict Resolution")
     
-    from causal.discovery_constraints import validate_constraints, create_prior_knowledge_matrix
+    from causal_ai.discovery_constraints import validate_constraints, create_prior_knowledge_matrix
     import numpy as np
     
     # Create conflicting constraints

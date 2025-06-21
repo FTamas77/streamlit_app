@@ -5,7 +5,7 @@ This __init__.py file makes this directory a Python package, enabling:
 
 1. IMPORT FUNCTIONALITY
    - Allows importing modules from subdirectories
-   - Example: from causal.analyzer import CausalAnalyzer
+   - Example: from causal_ai.analyzer import CausalAnalyzer
    
 2. PACKAGE ORGANIZATION  
    - Groups related modules together logically
@@ -32,7 +32,7 @@ Without __init__.py files:
 Example usage enabled by __init__.py:
 ```python
 # This works because of __init__.py files:
-from causal.analyzer import CausalAnalyzer
+from causal_ai.analyzer import CausalAnalyzer
 from utils.data_cleaning import clean_data
 from utils.effect_size import classify_effect_size
 
@@ -50,7 +50,7 @@ __description__ = "Advanced causal analysis platform with AI integration"
 
 # Expose main components (optional)
 try:
-    from causal.analyzer import CausalAnalyzer
+    from causal_ai.analyzer import CausalAnalyzer
     from llm.llm import generate_domain_constraints, explain_results_with_llm
     
     __all__ = [

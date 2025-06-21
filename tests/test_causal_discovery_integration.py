@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import numpy as np
 import pandas as pd
-from causal.analyzer import CausalAnalyzer
+from causal_ai.analyzer import CausalAnalyzer
 
 def test_causal_discovery_smoke_test():
     """

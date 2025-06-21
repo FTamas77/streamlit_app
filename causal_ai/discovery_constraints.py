@@ -21,8 +21,7 @@ def create_prior_knowledge_matrix(constraints: Dict, columns: List[str]) -> Opti
         constraints: Dictionary with constraint types:
             - 'forbidden_edges': List of [source, target] pairs that should be forbidden
             - 'required_edges': List of [source, target] pairs that should be required
-        columns: List of column names in the dataset
-      Returns:
+        columns: List of column names in the dataset    Returns:
         Prior knowledge matrix or None if LiNGAM utils not available
     """
     if not LINGAM_UTILS_AVAILABLE:
@@ -30,8 +29,16 @@ def create_prior_knowledge_matrix(constraints: Dict, columns: List[str]) -> Opti
         return None
     
     n_variables = len(columns)
-    col_to_idx = {col: idx for idx, col in enumerate(columns)}    # Start with no prior knowledge (all -1)
+    col_to_idx = {col: idx for idx, col in enumerate(columns)}
+    
+    # Start with no prior knowledge (all -1)
     prior_knowledge = make_prior_knowledge(n_variables=n_variables)
+    
+    # Validate constraints for conflicts before applying
+    conflicts = _validate_constraint_conflicts(constraints, columns)
+    if conflicts:
+        print(f"DEBUG: WARNING - Constraint conflicts detected: {conflicts}")
+        print("DEBUG: This may cause DirectLiNGAM to produce cycles")
     
     # Add forbidden edges (set to 0: no directed path)
     if 'forbidden_edges' in constraints:
@@ -53,6 +60,34 @@ def create_prior_knowledge_matrix(constraints: Dict, columns: List[str]) -> Opti
     
     print(f"DEBUG: Final prior knowledge matrix:\n{prior_knowledge}")
     return prior_knowledge
+
+
+def _validate_constraint_conflicts(constraints: Dict, columns: List[str]) -> List[str]:
+    """Check for conflicts in constraints that might cause cycles"""
+    conflicts = []
+    
+    if 'forbidden_edges' not in constraints or 'required_edges' not in constraints:
+        return conflicts
+    
+    forbidden = constraints.get('forbidden_edges', [])
+    required = constraints.get('required_edges', [])
+    
+    # Check for direct conflicts (same edge both forbidden and required)
+    for req_edge in required:
+        if req_edge in forbidden:
+            conflicts.append(f"Edge {req_edge[0]} -> {req_edge[1]} is both required and forbidden")
+    
+    # Check for potential cycle creation
+    # This is a simplified check - a full check would require graph analysis
+    required_edges_set = set((edge[0], edge[1]) for edge in required)
+    
+    # Look for potential 2-cycles in required edges
+    for source, target in required:
+        reverse_edge = (target, source)
+        if reverse_edge in required_edges_set:
+            conflicts.append(f"Required edges create 2-cycle: {source} <-> {target}")
+    
+    return conflicts
 
 def convert_edge_constraints(edge_list: List[List[str]], columns) -> Optional[np.ndarray]:
     """
