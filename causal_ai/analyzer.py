@@ -24,32 +24,32 @@ class CausalAnalyzer:
         self.adjacency_matrix = None
         self.causal_model = None
         self.domain_constraints = None
-    
+        
+        # Store discovery results (coordinator pattern)
+        self.discovery_results = None
+        self.columns = None
+        self.categorical_mappings = {}
+        self.encoded_data = None
+        self.discovery_model = None
+
     def get_numeric_columns(self):
         """Get list of numeric columns available for causal analysis"""
-        if hasattr(self.discovery, 'numeric_columns') and self.discovery.numeric_columns:
-            # Get the original numeric columns
-            available_cols = list(self.discovery.numeric_columns)
-            
-            # Add encoded categorical columns if they exist
-            if hasattr(self.discovery, 'encoded_data') and self.discovery.encoded_data is not None:
-                encoded_cols = list(self.discovery.encoded_data.columns)
-                for col in encoded_cols:
-                    if col.endswith('_Code') and col not in available_cols:
-                        available_cols.append(col)            
-            return available_cols
+        if self.encoded_data is not None:
+            # Use encoded data columns from discovery results
+            return list(self.encoded_data.columns)
         elif self.data is not None:
-            # Fallback: determine numeric columns from data
+            # Fallback: determine numeric columns from original data
             return list(self.data.select_dtypes(include=[np.number]).columns)
         else:
             return []
     
     def get_categorical_columns(self):
-        """Get list of categorical columns that were excluded from causal analysis"""
-        if hasattr(self.discovery, 'categorical_columns') and self.discovery.categorical_columns:
-            return self.discovery.categorical_columns
+        """Get list of categorical columns that were processed during discovery"""
+        if self.categorical_mappings:
+            # Return columns that have categorical mappings
+            return list(self.categorical_mappings.keys())
         elif self.data is not None:
-            # Fallback: determine categorical columns from data
+            # Fallback: determine categorical columns from original data
             return list(self.data.select_dtypes(exclude=[np.number]).columns)
         else:
             return []
@@ -206,6 +206,7 @@ class CausalAnalyzer:
             st.error(f"Unexpected error loading file: {str(e)}")
             st.info("Please check your file format and try again")
             return False    
+    
     def run_causal_discovery(self, constraints: Dict = None):
         """Run causal discovery with domain constraints and validation"""
         if self.data is None:
@@ -215,14 +216,29 @@ class CausalAnalyzer:
             raise ValueError("Data is empty. Cannot perform causal discovery.")
         
         try:
-            success = self.discovery.run_discovery(self.data, constraints)
-            if success:
-                self.adjacency_matrix = self.discovery.get_adjacency_matrix()
+            # Run discovery and capture all results
+            discovery_results = self.discovery.run_discovery(self.data, constraints)
+            
+            if discovery_results is not None:
+                # Store all discovery results in the analyzer
+                self.discovery_results = discovery_results
+                self.adjacency_matrix = discovery_results['adjacency_matrix']
+                self.columns = discovery_results['columns']
+                self.categorical_mappings = discovery_results['categorical_mappings']
+                self.encoded_data = discovery_results['encoded_data']
+                self.discovery_model = discovery_results['model']
+                
                 if self.adjacency_matrix is None:
                     st.warning("Causal discovery completed but no adjacency matrix was generated")
-            return success
+                
+                return True
+            else:
+                # Discovery failed
+                self._clear_discovery_results()
+                return False
             
         except Exception as e:
+            self._clear_discovery_results()
             error_msg = str(e)
             if "LiNGAM" in error_msg:
                 st.error(f"❌ Causal discovery failed: Missing required dependency. {error_msg}")
@@ -233,6 +249,15 @@ class CausalAnalyzer:
             else:
                 st.error(f"❌ Causal discovery failed: {error_msg}")
             return False
+    
+    def _clear_discovery_results(self):
+        """Clear all stored discovery results"""
+        self.discovery_results = None
+        self.adjacency_matrix = None
+        self.columns = None
+        self.categorical_mappings = {}
+        self.encoded_data = None
+        self.discovery_model = None
 
     def calculate_ate(self, treatment: str, outcome: str) -> Dict:
         """
@@ -272,11 +297,10 @@ class CausalAnalyzer:
             raise ValueError(f"Outcome must be a non-empty string, got: {outcome}")
         
         if treatment == outcome:
-            raise ValueError("Treatment and outcome variables cannot be the same")        
-        # Get available columns for validation
+            raise ValueError("Treatment and outcome variables cannot be the same")          # Get available columns for validation
         available_columns = set(self.data.columns)
-        if hasattr(self.discovery, 'encoded_data') and self.discovery.encoded_data is not None:
-            available_columns.update(self.discovery.encoded_data.columns)
+        if self.encoded_data is not None:
+            available_columns.update(self.encoded_data.columns)
         
         # Check if variables exist in available data
         missing_vars = []
@@ -293,19 +317,18 @@ class CausalAnalyzer:
         try:
             # Check if we have sufficient data for the analysis
             analysis_cols = [treatment, outcome]
-            
-            # Determine which dataset to check
+              # Determine which dataset to check
             data_to_check = self.data
-            if (hasattr(self.discovery, 'encoded_data') and self.discovery.encoded_data is not None and
+            if (self.encoded_data is not None and
                 any(col.endswith('_Code') for col in analysis_cols)):
-                data_to_check = self.discovery.encoded_data
+                data_to_check = self.encoded_data
             
             # Check if all required columns exist in the selected dataset
             missing_in_selected = [col for col in analysis_cols if col not in data_to_check.columns]
             if missing_in_selected:
                 # Try the other dataset
-                if data_to_check is self.data and hasattr(self.discovery, 'encoded_data'):
-                    data_to_check = self.discovery.encoded_data
+                if data_to_check is self.data and self.encoded_data is not None:
+                    data_to_check = self.encoded_data
                 elif data_to_check is not self.data:
                     data_to_check = self.data
                 
@@ -357,3 +380,79 @@ class CausalAnalyzer:
         
         from analytics.relationship_analysis import analyze_relationships
         return analyze_relationships(self.data)
+    
+    def has_discovery_results(self) -> bool:
+        """Check if causal discovery has been run and results are available"""
+        return self.discovery_results is not None and self.adjacency_matrix is not None
+    
+    def get_discovery_results(self) -> Dict:
+        """Get all discovery results as a dictionary"""
+        if not self.has_discovery_results():
+            return {}
+        return self.discovery_results.copy()
+    
+    def get_categorical_mappings(self) -> Dict:
+        """Get categorical variable mappings from discovery"""
+        return self.categorical_mappings.copy()
+    
+    def decode_categorical_value(self, column: str, encoded_value):
+        """
+        Convert an encoded categorical value back to its original label.
+        
+        Args:
+            column (str): Column name
+            encoded_value: Encoded numeric value
+            
+        Returns:
+            Original categorical label, or the encoded_value if not categorical
+        """
+        if column in self.categorical_mappings:
+            reverse_mapping = self.categorical_mappings[column]['reverse']
+            return reverse_mapping.get(encoded_value, f"Unknown({encoded_value})")
+        return encoded_value
+    
+    def get_causal_relationships_with_labels(self, threshold=0.01):
+        """
+        Get causal relationships with original categorical labels for interpretation.
+        
+        Args:
+            threshold (float): Minimum edge weight to consider as a relationship
+            
+        Returns:
+            List[Dict]: List of relationships with human-readable labels
+        """
+        if not self.has_discovery_results():
+            return []
+        
+        relationships = []
+        
+        for i, target in enumerate(self.columns):
+            for j, source in enumerate(self.columns):
+                if i != j and abs(self.adjacency_matrix[i, j]) > threshold:
+                    weight = self.adjacency_matrix[i, j]
+                    
+                    # Create relationship info
+                    relationship = {
+                        'source': source,
+                        'target': target,
+                        'weight': weight,
+                        'direction': 'positive' if weight > 0 else 'negative',
+                        'strength': 'strong' if abs(weight) > 0.3 else 'moderate' if abs(weight) > 0.1 else 'weak'
+                    }
+                    
+                    # Add categorical interpretation if available
+                    if source in self.categorical_mappings:
+                        relationship['source_categories'] = self.categorical_mappings[source]['original_values']
+                        relationship['source_type'] = 'categorical'
+                    else:
+                        relationship['source_type'] = 'numeric'
+                        
+                    if target in self.categorical_mappings:
+                        relationship['target_categories'] = self.categorical_mappings[target]['original_values']
+                        relationship['target_type'] = 'categorical'
+                    else:
+                        relationship['target_type'] = 'numeric'
+                    
+                    relationships.append(relationship)
+        
+        return relationships
