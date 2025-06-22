@@ -91,15 +91,11 @@ class CausalDiscovery:
                 # Count non-zero edges
                 non_zero_edges = np.count_nonzero(np.abs(self.adjacency_matrix) > 0.01)
                 print(f"DEBUG: Number of edges with |weight| > 0.01: {non_zero_edges}")
-                
-                # Check for cycles (this should not happen with proper DirectLiNGAM)
+                  # Check for cycles (this should not happen with proper DirectLiNGAM)
                 if self._has_cycles():
                     print("DEBUG: ⚠️  WARNING - DirectLiNGAM produced a graph with cycles!")
                     print("DEBUG: This indicates an issue with the prior knowledge matrix or constraints")
-                    
-                    # Minimal cycle removal as emergency fallback
-                    removed = self._remove_cycles()
-                    print(f"DEBUG: Emergency cycle removal: removed {removed} edges")
+                    print("DEBUG: The original DirectLiNGAM output will be preserved without modification")
                 else:
                     print("DEBUG: ✅ DirectLiNGAM produced a valid DAG")
             
@@ -179,39 +175,7 @@ class CausalDiscovery:
                     return True
         
         return False
-    
-    def _remove_cycles(self) -> int:
-        """Emergency cycle removal - remove weakest edges to eliminate cycles"""
-        if self.adjacency_matrix is None:
-            return 0
-        
-        removed_count = 0
-        max_iterations = 20  # Prevent infinite loops
-        iteration = 0
-        
-        while self._has_cycles() and iteration < max_iterations:
-            # Find all edges and remove the weakest one
-            edges = []
-            n = self.adjacency_matrix.shape[0]
-            for i in range(n):
-                for j in range(n):
-                    if abs(self.adjacency_matrix[i, j]) > 0.01:
-                        edges.append((i, j, abs(self.adjacency_matrix[i, j])))
-            
-            if not edges:
-                break
-            
-            # Remove the weakest edge
-            weakest = min(edges, key=lambda x: x[2])
-            from_idx, to_idx, weight = weakest
-            
-            print(f"DEBUG: Emergency removal of cycle edge: {self.columns[from_idx]} -> {self.columns[to_idx]} (weight: {self.adjacency_matrix[from_idx, to_idx]:.3f})")
-            self.adjacency_matrix[from_idx, to_idx] = 0
-            removed_count += 1
-            iteration += 1
-        
-        return removed_count
-    
+      
     def get_adjacency_matrix(self):
         """Get the discovered adjacency matrix"""
         return self.adjacency_matrix
