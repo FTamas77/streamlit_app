@@ -24,7 +24,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import Mock, patch
-from causal_ai.inference import calculate_ate_dowhy, _interpret_ate, _generate_simple_recommendation
+from causal_ai.inference import calculate_ate, _interpret_ate, _generate_simple_recommendation
 
 def create_mock_analyzer_for_inference():
     """Create a mock analyzer with realistic causal data for testing inference directly"""
@@ -86,7 +86,7 @@ def create_mock_analyzer_for_inference():
 def test_inference_smoke_test():
     """
     Smoke test: Basic ATE calculation without issues (happy path).
-    Tests the calculate_ate_dowhy function directly.
+    Tests the calculate_ate function directly.
     """
     print("🧪 Running causal inference smoke test...")
     
@@ -97,11 +97,15 @@ def test_inference_smoke_test():
     
     print(f"📊 Created test data with shape: {mock_analyzer.data.shape}")
     print(f"📊 Treatment variable: {treatment_var}")
-    print(f"📊 Outcome variable: {outcome_var}")
-    
-    # Run ATE calculation directly
+    print(f"📊 Outcome variable: {outcome_var}")    # Run ATE calculation directly
     print("🔍 Running ATE calculation...")
-    ate_results = calculate_ate_dowhy(mock_analyzer, treatment_var, outcome_var)
+    ate_results = calculate_ate(
+        data=mock_analyzer.data,
+        treatment=treatment_var, 
+        outcome=outcome_var,
+        adjacency_matrix=mock_analyzer.adjacency_matrix,
+        columns=mock_analyzer.columns
+    )
     
     # Assertions
     assert ate_results is not None, "ATE calculation should return results"
@@ -123,33 +127,24 @@ def test_inference_input_validation():
     
     mock_analyzer = create_mock_analyzer_for_inference()
     
-    # Test with None analyzer
-    with pytest.raises(ValueError, match="Analyzer object is required"):
-        calculate_ate_dowhy(None, 'treatment', 'outcome')
-    
-    # Test with empty treatment
+    # Test with None data
+    with pytest.raises(ValueError, match="Data is required and cannot be empty"):
+        calculate_ate(None, 'treatment', 'outcome')
+      # Test with empty treatment
     with pytest.raises(ValueError, match="Treatment must be a non-empty string"):
-        calculate_ate_dowhy(mock_analyzer, '', 'outcome')
+        calculate_ate(mock_analyzer.data, '', 'outcome')
     
     # Test with empty outcome  
     with pytest.raises(ValueError, match="Outcome must be a non-empty string"):
-        calculate_ate_dowhy(mock_analyzer, 'treatment', '')
+        calculate_ate(mock_analyzer.data, 'treatment', '')
     
     # Test with same treatment and outcome
     with pytest.raises(ValueError, match="Treatment and outcome variables cannot be the same"):
-        calculate_ate_dowhy(mock_analyzer, 'treatment', 'treatment')
-    
-    # Test with analyzer without data
-    mock_analyzer_no_data = Mock()
-    mock_analyzer_no_data.data = None
-    with pytest.raises(ValueError, match="Analyzer must have data loaded"):
-        calculate_ate_dowhy(mock_analyzer_no_data, 'treatment', 'outcome')
+        calculate_ate(mock_analyzer.data, 'treatment', 'treatment')
     
     # Test with empty data
-    mock_analyzer_empty = Mock()
-    mock_analyzer_empty.data = pd.DataFrame()
-    with pytest.raises(ValueError, match="Analyzer data is empty"):
-        calculate_ate_dowhy(mock_analyzer_empty, 'treatment', 'outcome')
+    with pytest.raises(ValueError, match="Data is required and cannot be empty"):
+        calculate_ate(pd.DataFrame(), 'treatment', 'outcome')
     
     print("✅ Input validation working correctly!")
 
@@ -188,7 +183,13 @@ def test_inference_edge_cases():
     
     # Test with missing treatment variable
     try:
-        result = calculate_ate_dowhy(mock_analyzer, 'nonexistent_treatment', 'outcome')
+        result = calculate_ate(
+            data=mock_analyzer.data,
+            treatment='nonexistent_treatment', 
+            outcome='outcome',
+            adjacency_matrix=mock_analyzer.adjacency_matrix,
+            columns=mock_analyzer.columns
+        )
         # If it doesn't raise an error, check that it handles it gracefully
         assert result is not None, "Should handle missing variables gracefully"
     except Exception as e:
@@ -197,7 +198,13 @@ def test_inference_edge_cases():
     
     # Test with missing outcome variable
     try:
-        result = calculate_ate_dowhy(mock_analyzer, 'treatment', 'nonexistent_outcome')
+        result = calculate_ate(
+            data=mock_analyzer.data,
+            treatment='treatment', 
+            outcome='nonexistent_outcome',
+            adjacency_matrix=mock_analyzer.adjacency_matrix,
+            columns=mock_analyzer.columns
+        )
         assert result is not None, "Should handle missing variables gracefully"
     except Exception as e:
         assert "not found" in str(e).lower() or "missing" in str(e).lower() or "key" in str(e).lower()
@@ -244,7 +251,13 @@ def test_inference_with_different_data_types():
     
     # Test ATE calculation with continuous treatment
     try:
-        ate_results = calculate_ate_dowhy(mock_analyzer_continuous, 'continuous_treatment', 'outcome')
+        ate_results = calculate_ate(
+            data=mock_analyzer_continuous.data,
+            treatment='continuous_treatment', 
+            outcome='outcome',
+            adjacency_matrix=mock_analyzer_continuous.adjacency_matrix,
+            columns=mock_analyzer_continuous.columns
+        )
         assert ate_results is not None, "Should handle continuous treatment"
         print("✅ Continuous treatment handled successfully!")
     except Exception as e:

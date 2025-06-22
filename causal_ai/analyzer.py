@@ -21,16 +21,37 @@ class CausalAnalyzer:
     def __init__(self):
         self.data = None
         self.discovery = CausalDiscovery()
-        self.adjacency_matrix = None
         self.causal_model = None
         self.domain_constraints = None
         
         # Store discovery results (coordinator pattern)
         self.discovery_results = None
-        self.columns = None
-        self.categorical_mappings = {}
-        self.encoded_data = None
-        self.discovery_model = None
+
+    # Properties to access discovery results without redundancy
+    @property
+    def adjacency_matrix(self):
+        """Get adjacency matrix from discovery results"""
+        return self.discovery_results['adjacency_matrix'] if self.discovery_results else None
+    
+    @property
+    def columns(self):
+        """Get columns from discovery results"""
+        return self.discovery_results['columns'] if self.discovery_results else None
+    
+    @property
+    def categorical_mappings(self):
+        """Get categorical mappings from discovery results"""
+        return self.discovery_results['categorical_mappings'] if self.discovery_results else {}
+    
+    @property
+    def encoded_data(self):
+        """Get encoded data from discovery results"""
+        return self.discovery_results['encoded_data'] if self.discovery_results else None
+    
+    @property
+    def discovery_model(self):
+        """Get discovery model from discovery results"""
+        return self.discovery_results['model'] if self.discovery_results else None
 
     def get_numeric_columns(self):
         """Get list of numeric columns available for causal analysis"""
@@ -215,18 +236,12 @@ class CausalAnalyzer:
         if self.data.empty:
             raise ValueError("Data is empty. Cannot perform causal discovery.")
         
-        try:
-            # Run discovery and capture all results
+        try:            # Run discovery and capture all results
             discovery_results = self.discovery.run_discovery(self.data, constraints)
             
             if discovery_results is not None:
-                # Store all discovery results in the analyzer
+                # Store discovery results - properties will access them
                 self.discovery_results = discovery_results
-                self.adjacency_matrix = discovery_results['adjacency_matrix']
-                self.columns = discovery_results['columns']
-                self.categorical_mappings = discovery_results['categorical_mappings']
-                self.encoded_data = discovery_results['encoded_data']
-                self.discovery_model = discovery_results['model']
                 
                 if self.adjacency_matrix is None:
                     st.warning("Causal discovery completed but no adjacency matrix was generated")
@@ -253,11 +268,6 @@ class CausalAnalyzer:
     def _clear_discovery_results(self):
         """Clear all stored discovery results"""
         self.discovery_results = None
-        self.adjacency_matrix = None
-        self.columns = None
-        self.categorical_mappings = {}
-        self.encoded_data = None
-        self.discovery_model = None
 
     def calculate_ate(self, treatment: str, outcome: str) -> Dict:
         """
@@ -350,11 +360,24 @@ class CausalAnalyzer:
             if isinstance(e, ValueError):
                 raise
             else:
-                raise RuntimeError(f"Data validation failed: {str(e)}") from e
-          # All validation passed - proceed with ATE calculation
+                raise RuntimeError(f"Data validation failed: {str(e)}") from e        # All validation passed - proceed with ATE calculation
         try:
-            from causal_ai.inference import calculate_ate_dowhy
-            result = calculate_ate_dowhy(self, treatment, outcome)
+            from causal_ai.inference import calculate_ate
+            
+            # Determine which data to use (encoded if available and needed)
+            data_to_use = self.data
+            if (self.encoded_data is not None and 
+                (treatment.endswith('_Code') or outcome.endswith('_Code') or 
+                 (self.columns and any(col.endswith('_Code') for col in self.columns)))):
+                data_to_use = self.encoded_data
+            
+            result = calculate_ate(
+                data=data_to_use,
+                treatment=treatment, 
+                outcome=outcome,
+                adjacency_matrix=self.adjacency_matrix,
+                columns=self.columns
+            )
             
             # Additional result validation
             if not isinstance(result, dict):

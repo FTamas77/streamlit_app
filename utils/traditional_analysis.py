@@ -23,11 +23,10 @@ def run_traditional_analysis(analyzer, treatment, outcome):
         'warnings': [],
         'assumptions': []
     }
-    
-    # Handle encoded data if available
-    if hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
+      # Handle encoded data if available
+    if analyzer.encoded_data is not None:
         # Use encoded data for consistency with causal analysis
-        encoded_data = analyzer.discovery.encoded_data.copy()
+        encoded_data = analyzer.encoded_data.copy()
         treatment_data = encoded_data[treatment]
         outcome_data = encoded_data[outcome]
         data_for_analysis = encoded_data
@@ -87,15 +86,15 @@ def run_traditional_analysis(analyzer, treatment, outcome):
     except Exception as e:
         results['methods']['simple_regression'] = {
             'name': 'Simple Linear Regression',
-            'error': str(e)
-        }
-      # 3. Multiple Linear Regression (with available confounders from causal discovery)
+            'error': str(e)        }
+    
+    # 3. Multiple Linear Regression (with available confounders from causal discovery)
     # If causal discovery was run, use confounders identified from the graph
     confounders = []
     if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
-        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
+        if analyzer.columns:
             # Get all variables except treatment and outcome as potential confounders
-            all_vars = list(analyzer.discovery.columns)
+            all_vars = list(analyzer.columns)
             confounders = [var for var in all_vars if var not in [treatment, outcome]]
             if confounders:
                 print(f"DEBUG: Using confounders from causal graph: {confounders}")

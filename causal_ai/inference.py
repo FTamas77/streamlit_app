@@ -79,14 +79,27 @@ def _interpret_ate(ate_value: float, treatment: str, outcome: str) -> str:
         
     return f"A one-unit increase in {treatment} {direction} {outcome} by {abs(ate_value):.4f} units on average."
 
-def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
-    """Calculate ATE using DoWhy - uses causal graph structure automatically, with debug messages"""
+def calculate_ate(data: pd.DataFrame, treatment: str, outcome: str, 
+                  adjacency_matrix=None, columns=None) -> Dict:
+    """
+    Stateless version of causal inference using DoWhy.
+
+    Parameters:
+        data: pd.DataFrame (should already be encoded if needed)
+        treatment: str (column name)
+        outcome: str (column name)
+        adjacency_matrix: np.ndarray (from discovery, optional)
+        columns: List[str] (column order matching the adjacency matrix, optional)
+
+    Returns:
+        dict with ATE value, CI, p-value, and textual interpretation.
+    """
     if not DOWHY_AVAILABLE:
         raise ImportError("DoWhy is required for ATE calculation but not available")
     
     # Input validation
-    if not analyzer:
-        raise ValueError("Analyzer object is required but not provided")
+    if data is None or data.empty:
+        raise ValueError("Data is required and cannot be empty")
     
     if not treatment or not isinstance(treatment, str):
         raise ValueError(f"Treatment must be a non-empty string, got: {treatment}")
@@ -96,13 +109,6 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
     
     if treatment == outcome:
         raise ValueError("Treatment and outcome variables cannot be the same")
-    
-    # Check if analyzer has required data
-    if not hasattr(analyzer, 'data') or analyzer.data is None:
-        raise ValueError("Analyzer must have data loaded")
-    
-    if analyzer.data.empty:
-        raise ValueError("Analyzer data is empty")
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -119,86 +125,57 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             def calculate_simple_metrics(data, treatment, outcome, effect):
                 return {}
             def classify_effect_size(effect):
-                return "unknown"
-          # Debug: show what parameters are present
+                return "unknown"        # Debug: show what parameters are present
         print(f"DEBUG: ================ CAUSAL INFERENCE DEBUG ================")
-        print(f"DEBUG: calculate_ate_dowhy called with treatment={treatment}, outcome={outcome}")
+        print(f"DEBUG: calculate_ate called with treatment={treatment}, outcome={outcome}")
         print(f"DEBUG: Using causal graph structure for confounder identification")
-        print(f"DEBUG: analyzer has adjacency_matrix: {hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None}")
+        print(f"DEBUG: adjacency_matrix provided: {adjacency_matrix is not None}")
         
         # Debug: Check data being used
-        print(f"DEBUG: analyzer.data shape: {analyzer.data.shape}")
-        print(f"DEBUG: analyzer.data columns: {list(analyzer.data.columns)}")
-        print(f"DEBUG: Treatment '{treatment}' in analyzer.data: {treatment in analyzer.data.columns}")
-        print(f"DEBUG: Outcome '{outcome}' in analyzer.data: {outcome in analyzer.data.columns}")
-          # Check if we have encoded data available
-        if hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
-            try:
-                print(f"DEBUG: encoded_data available with shape: {analyzer.discovery.encoded_data.shape}")
-                print(f"DEBUG: encoded_data columns: {list(analyzer.discovery.encoded_data.columns)}")
-                print(f"DEBUG: Treatment '{treatment}' in encoded_data: {treatment in analyzer.discovery.encoded_data.columns}")
-                print(f"DEBUG: Outcome '{outcome}' in encoded_data: {outcome in analyzer.discovery.encoded_data.columns}")
-            except (TypeError, AttributeError):
-                # Handle Mock objects in tests
-                print(f"DEBUG: encoded_data available (Mock object in tests)")
-        else:
-            print(f"DEBUG: No encoded_data available")
-          # Check variable values and distributions
-        if treatment in analyzer.data.columns:
-            print(f"DEBUG: Treatment '{treatment}' stats in analyzer.data:")
-            print(f"       - Unique values: {analyzer.data[treatment].nunique()}")
+        print(f"DEBUG: data shape: {data.shape}")
+        print(f"DEBUG: data columns: {list(data.columns)}")
+        print(f"DEBUG: Treatment '{treatment}' in data: {treatment in data.columns}")
+        print(f"DEBUG: Outcome '{outcome}' in data: {outcome in data.columns}")        # Check variable values and distributions
+        if treatment in data.columns:
+            print(f"DEBUG: Treatment '{treatment}' stats in data:")
+            print(f"       - Unique values: {data[treatment].nunique()}")
             # Check if treatment is numeric for proper formatting
-            if analyzer.data[treatment].dtype.kind in 'biufc':  # numeric types
-                print(f"       - Value range: [{analyzer.data[treatment].min():.3f}, {analyzer.data[treatment].max():.3f}]")
-                print(f"       - Mean: {analyzer.data[treatment].mean():.3f}")
-                print(f"       - Std: {analyzer.data[treatment].std():.3f}")
+            if data[treatment].dtype.kind in 'biufc':  # numeric types
+                print(f"       - Value range: [{data[treatment].min():.3f}, {data[treatment].max():.3f}]")
+                print(f"       - Mean: {data[treatment].mean():.3f}")
+                print(f"       - Std: {data[treatment].std():.3f}")
             else:
-                print(f"       - Value range: [{analyzer.data[treatment].min()}, {analyzer.data[treatment].max()}]")
+                print(f"       - Value range: [{data[treatment].min()}, {data[treatment].max()}]")
                 print(f"       - Type: categorical")
-            print(f"       - Sample values: {list(analyzer.data[treatment].head())}")
+            print(f"       - Sample values: {list(data[treatment].head())}")
         
-        if outcome in analyzer.data.columns:
-            print(f"DEBUG: Outcome '{outcome}' stats in analyzer.data:")
-            print(f"       - Unique values: {analyzer.data[outcome].nunique()}")
+        if outcome in data.columns:
+            print(f"DEBUG: Outcome '{outcome}' stats in data:")
+            print(f"       - Unique values: {data[outcome].nunique()}")
             # Check if outcome is numeric for proper formatting
-            if analyzer.data[outcome].dtype.kind in 'biufc':  # numeric types
-                print(f"       - Value range: [{analyzer.data[outcome].min():.3f}, {analyzer.data[outcome].max():.3f}]")
-                print(f"       - Mean: {analyzer.data[outcome].mean():.3f}")
-                print(f"       - Std: {analyzer.data[outcome].std():.3f}")
+            if data[outcome].dtype.kind in 'biufc':  # numeric types
+                print(f"       - Value range: [{data[outcome].min():.3f}, {data[outcome].max():.3f}]")
+                print(f"       - Mean: {data[outcome].mean():.3f}")
+                print(f"       - Std: {data[outcome].std():.3f}")
             else:
-                print(f"       - Value range: [{analyzer.data[outcome].min()}, {analyzer.data[outcome].max()}]")
+                print(f"       - Value range: [{data[outcome].min()}, {data[outcome].max()}]")
                 print(f"       - Type: categorical")
-            print(f"       - Sample values: {list(analyzer.data[outcome].head())}")
-          # Check correlation
-        if treatment in analyzer.data.columns and outcome in analyzer.data.columns:
+            print(f"       - Sample values: {list(data[outcome].head())}")
+        
+        # Check correlation
+        if treatment in data.columns and outcome in data.columns:
             # Calculate correlation if both variables are numeric
-            if (analyzer.data[treatment].dtype.kind in 'biufc' and 
-                analyzer.data[outcome].dtype.kind in 'biufc'):
-                correlation = analyzer.data[treatment].corr(analyzer.data[outcome])
+            if (data[treatment].dtype.kind in 'biufc' and 
+                data[outcome].dtype.kind in 'biufc'):
+                correlation = data[treatment].corr(data[outcome])
                 print(f"DEBUG: Correlation between {treatment} and {outcome}: {correlation:.4f}")
             else:
                 print(f"DEBUG: Correlation not calculated (at least one variable is categorical)")
         
-        # Determine which data to use - CRITICAL: must match the graph columns
-        use_encoded_data = False
-        data_to_use = analyzer.data
-          # Check if we're using encoded columns for the graph
-        graph_uses_encoded = False
-        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
-            graph_uses_encoded = True
-          # If the graph uses encoded variables OR we have encoded variables in treatment/outcome
-        if (graph_uses_encoded or 
-            treatment.endswith('_Code') or outcome.endswith('_Code')):
-            if hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
-                print(f"DEBUG: Using encoded data because graph uses encoded variables")
-                data_to_use = analyzer.discovery.encoded_data
-                use_encoded_data = True
-            else:
-                print(f"DEBUG: WARNING: Graph uses encoded variables but no encoded data available!")
-                print(f"DEBUG: Will attempt to use original data, but this may cause errors")
-        else:
-            print(f"DEBUG: Using original data for inference")
-          # Enhanced variable validation with detailed error messages
+        # Use the provided data directly
+        data_to_use = data
+        print(f"DEBUG: Using provided data for inference")
+        print(f"DEBUG: Data shape: {data_to_use.shape}")        # Enhanced variable validation with detailed error messages
         missing_vars = []
         invalid_vars = []
         
@@ -207,8 +184,8 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             data_columns = list(data_to_use.columns)
         except (TypeError, AttributeError):
             # Mock object in tests - use original data columns
-            data_columns = list(analyzer.data.columns)
-            data_to_use = analyzer.data
+            data_columns = list(data.columns)
+            data_to_use = data
         
         # Check treatment variable
         if treatment not in data_columns:
@@ -233,10 +210,9 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             elif outcome_data.nunique() < 2:
                 invalid_vars.append(f"outcome '{outcome}' has insufficient variation (only {outcome_data.nunique()} unique values)")
             elif not np.issubdtype(outcome_data.dtype, np.number):
-                invalid_vars.append(f"outcome '{outcome}' is not numeric (type: {outcome_data.dtype})")        
-        # Report validation errors
+                invalid_vars.append(f"outcome '{outcome}' is not numeric (type: {outcome_data.dtype})")          # Report validation errors
         if missing_vars:
-            error_msg = f"Variables not found in {'encoded' if use_encoded_data else 'original'} data: {', '.join(missing_vars)}"
+            error_msg = f"Variables not found in data: {', '.join(missing_vars)}"
             print(f"DEBUG: ERROR: {error_msg}")
             print(f"DEBUG: Available columns: {data_columns}")
             raise ValueError(error_msg)
@@ -245,8 +221,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             error_msg = f"Invalid variable characteristics: {'; '.join(invalid_vars)}"
             print(f"DEBUG: ERROR: {error_msg}")
             raise ValueError(error_msg)
-        
-        # Check for sufficient data
+          # Check for sufficient data
         non_null_rows = data_to_use[[treatment, outcome]].dropna()
         if len(non_null_rows) < 10:
             error_msg = f"Insufficient data after removing null values: only {len(non_null_rows)} rows available (minimum 10 required)"
@@ -258,9 +233,10 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             print(f"DEBUG: Removing {len(data_to_use) - len(non_null_rows)} rows with null values")
             data_to_use = non_null_rows
         
-        print(f"DEBUG: Using {'encoded' if use_encoded_data else 'original'} data for inference")
+        print(f"DEBUG: Using provided data for inference")
         print(f"DEBUG: Data shape: {data_to_use.shape}")
-          # Update variable stats with the data we're actually using
+        
+        # Update variable stats with the data we're actually using
         print(f"DEBUG: Treatment '{treatment}' stats in data_to_use:")
         print(f"       - Unique values: {data_to_use[treatment].nunique()}")
         # Check if treatment is numeric for proper formatting
@@ -281,8 +257,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             print(f"       - Std: {data_to_use[outcome].std():.3f}")
         else:
             print(f"       - Value range: [{data_to_use[outcome].min()}, {data_to_use[outcome].max()}]")
-            print(f"       - Type: categorical")
-          # Calculate correlation if both variables are numeric
+            print(f"       - Type: categorical")        # Calculate correlation if both variables are numeric
         if (data_to_use[treatment].dtype.kind in 'biufc' and 
             data_to_use[outcome].dtype.kind in 'biufc'):
             correlation = data_to_use[treatment].corr(data_to_use[outcome])
@@ -294,13 +269,14 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
         
         # Only create DOT graph if we have an adjacency matrix from causal discovery
         graph = None
-        if hasattr(analyzer, 'adjacency_matrix') and analyzer.adjacency_matrix is not None:
-            print("DEBUG: Using adjacency_matrix to build graph for DoWhy")            # CRITICAL FIX: Always use the same columns that were used for causal discovery
+        if adjacency_matrix is not None:
+            print("DEBUG: Using provided adjacency_matrix to build graph for DoWhy")
+            # CRITICAL FIX: Always use the same columns that were used for causal discovery
             # The adjacency matrix dimensions must match exactly with the graph columns
-            if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
-                graph_columns = analyzer.discovery.columns
-                print(f"DEBUG: Using columns for graph (matches adjacency matrix): {graph_columns}")
-                print(f"DEBUG: Adjacency matrix shape: {analyzer.adjacency_matrix.shape}")
+            if columns is not None:
+                graph_columns = columns
+                print(f"DEBUG: Using provided columns for graph (matches adjacency matrix): {graph_columns}")
+                print(f"DEBUG: Adjacency matrix shape: {adjacency_matrix.shape}")
                 
                 # Handle Mock objects in tests
                 try:
@@ -308,21 +284,21 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
                     print(f"DEBUG: Graph columns count: {graph_columns_count}")
                     
                     # Verify the dimensions match
-                    if analyzer.adjacency_matrix.shape[0] != graph_columns_count:
-                        print(f"DEBUG: CRITICAL ERROR: Adjacency matrix shape {analyzer.adjacency_matrix.shape} doesn't match encoded columns {graph_columns_count}")
+                    if adjacency_matrix.shape[0] != graph_columns_count:
+                        print(f"DEBUG: CRITICAL ERROR: Adjacency matrix shape {adjacency_matrix.shape} doesn't match columns {graph_columns_count}")
                         print(f"DEBUG: This will cause DoWhy to fail. Using fallback.")
                         graph_columns = None
                 except (TypeError, AttributeError):
                     # Mock object in tests - use fallback to original data columns
                     print(f"DEBUG: Mock columns in tests - using original data columns")
-                    graph_columns = list(analyzer.data.columns)
+                    graph_columns = list(data.columns)
             else:
-                print(f"DEBUG: No columns available in discovery module")
+                print(f"DEBUG: No columns provided")
                 graph_columns = None
             
             if graph_columns is not None:
                 dot_graph = _adjacency_to_dowhy_dot_graph(
-                    analyzer.adjacency_matrix, 
+                    adjacency_matrix, 
                     graph_columns, 
                     treatment, 
                     outcome
@@ -331,7 +307,7 @@ def calculate_ate_dowhy(analyzer, treatment: str, outcome: str) -> Dict:
             else:
                 print("DEBUG: Cannot create graph - no matching columns found")
         else:
-            print("DEBUG: No adjacency_matrix available, not passing graph to DoWhy")
+            print("DEBUG: No adjacency_matrix provided, not passing graph to DoWhy")
         
         # Confounders will be automatically identified from the causal graph
         print("DEBUG: Confounders will be automatically identified from causal graph structure")        # Create causal model - only pass graph if we have one

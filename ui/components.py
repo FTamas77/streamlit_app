@@ -498,19 +498,17 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
     - analyzer: CausalAnalyzer instance for recalculating scenarios
     """
     # Check if treatment is categorical - use specialized categorical policy explorer
-    if hasattr(analyzer.discovery, 'categorical_mappings') and treatment_var in analyzer.discovery.categorical_mappings:
+    if hasattr(analyzer, 'categorical_mappings') and treatment_var in analyzer.categorical_mappings:
         show_categorical_policy_explorer(ate_results, treatment_var, outcome_var, analyzer)
         return
     
     # Continue with continuous treatment policy explorer
     st.write("**Adjust the sliders below to explore different policy scenarios and see the impact in real-time:**")
-    
-    # Determine which data to use based on variable types
+      # Determine which data to use based on variable types
     # If treatment or outcome variables are encoded (end with '_Code'), use encoded data
     use_encoded_data = (treatment_var.endswith('_Code') or outcome_var.endswith('_Code'))
-    
-    if use_encoded_data and hasattr(analyzer.discovery, 'encoded_data') and analyzer.discovery.encoded_data is not None:
-        data_to_use = analyzer.discovery.encoded_data
+    if use_encoded_data and analyzer.encoded_data is not None:
+        data_to_use = analyzer.encoded_data
     else:
         data_to_use = analyzer.data
     
@@ -662,25 +660,23 @@ def show_interactive_scenario_explorer(ate_results, treatment_var, outcome_var, 
 
 def show_categorical_policy_explorer(ate_results, treatment_var, outcome_var, analyzer):
     """Interactive policy explorer for categorical treatments
-    
-    Shows meaningful policy scenarios for categorical variables:
+      Shows meaningful policy scenarios for categorical variables:
     - Population redistribution scenarios
     - Category-specific interventions 
     - Pairwise treatment comparisons
     """
-    categories = analyzer.discovery.categorical_mappings[treatment_var]['original_values']
-    encoding = analyzer.discovery.categorical_mappings[treatment_var]['encoding']
-    reverse_mapping = analyzer.discovery.categorical_mappings[treatment_var]['reverse']
+    categories = analyzer.categorical_mappings[treatment_var]['original_values']
+    encoding = analyzer.categorical_mappings[treatment_var]['encoding']
+    reverse_mapping = analyzer.categorical_mappings[treatment_var]['reverse']
     
     st.write("**Explore categorical treatment policies and their estimated impacts:**")
     
     # Get current distribution
     working_data = analyzer.data.copy()
-    if treatment_var in analyzer.discovery.categorical_mappings:
-        # Use encoded data for calculations
+    if treatment_var in analyzer.categorical_mappings:        # Use encoded data for calculations
         for col in working_data.columns:
-            if col in analyzer.discovery.categorical_mappings:
-                col_encoding = analyzer.discovery.categorical_mappings[col]['encoding']
+            if col in analyzer.categorical_mappings:
+                col_encoding = analyzer.categorical_mappings[col]['encoding']
                 working_data[col] = working_data[col].map(col_encoding)
     
     current_dist = working_data[treatment_var].value_counts().sort_index()

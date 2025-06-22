@@ -114,17 +114,17 @@ def test_causal_analyzer_state_consistency():
     # Run discovery
     discovery_success = analyzer.run_causal_discovery()
     assert discovery_success, f"Discovery should succeed, got {discovery_success}"
-    
-    # Check state after discovery
+      # Check state after discovery
     assert analyzer.discovery is not None, "Discovery object should exist"
     assert analyzer.adjacency_matrix is not None, "Adjacency matrix should exist"
-    assert analyzer.discovery.adjacency_matrix is not None, "Discovery should have adjacency matrix"
+    assert analyzer.discovery_results is not None, "Discovery results should exist"
+    assert analyzer.discovery_results['adjacency_matrix'] is not None, "Discovery results should have adjacency matrix"
     
-    # Check consistency between analyzer and discovery
+    # Check consistency between analyzer property and discovery results
     np.testing.assert_array_equal(
         analyzer.adjacency_matrix, 
-        analyzer.discovery.adjacency_matrix,
-        "Analyzer and discovery adjacency matrices should be identical"
+        analyzer.discovery_results['adjacency_matrix'],
+        "Analyzer adjacency matrix property should match discovery results"
     )
     
     # Test that data remains consistent

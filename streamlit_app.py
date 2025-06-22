@@ -533,10 +533,9 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
     # Show causal discovery results
     if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
         st.subheader("📈 Discovered Causal Graph")
-        
-        # Use columns from discovery (these match the adjacency matrix dimensions)
-        if hasattr(analyzer.discovery, 'columns') and analyzer.discovery.columns:
-            graph_columns = analyzer.discovery.columns
+          # Use columns from discovery (these match the adjacency matrix dimensions)
+        if analyzer.columns:
+            graph_columns = analyzer.columns
             st.info(f"📊 Showing relationships between {len(graph_columns)} variables")
             
             # Add simplified explanation
