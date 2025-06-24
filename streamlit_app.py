@@ -33,12 +33,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Professional CSS styling
+# Comprehensive CSS with Advanced Micro-Interactions
 st.markdown("""
 <style>
+    /* Page fade-in animation */
+    .main {
+        animation: pageLoad 0.8s ease-out;
+    }
+    
+    @keyframes pageLoad {
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+
     .main-container {
         max-width: 1200px;
-        margin: 0 auto;    }    .hero-section {
+        margin: 0 auto;
+    }
+    
+    /* Enhanced Hero Section with Micro-Interactions */
+    .hero-section {
         text-align: center; 
         padding: 1.5rem 2rem; 
         background: linear-gradient(135deg, #004c6d 0%, #427aa1 50%, #6ca0dc 100%); 
@@ -48,6 +62,13 @@ st.markdown("""
         box-shadow: 0 15px 40px rgba(0, 76, 109, 0.4), 0 5px 15px rgba(0, 76, 109, 0.2);
         position: relative;
         overflow: hidden;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+    }
+    
+    .hero-section:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 50px rgba(0, 76, 109, 0.5), 0 8px 20px rgba(0, 76, 109, 0.3);
     }
     
     .hero-section::before {
@@ -60,21 +81,27 @@ st.markdown("""
         background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
                     radial-gradient(circle at 70% 80%, rgba(108, 160, 220, 0.2) 0%, transparent 50%);
         pointer-events: none;
+        transition: opacity 0.3s ease;
     }
-      .hero-section::after {
+    
+    .hero-section:hover::before {
+        opacity: 0.8;
+    }
+        .hero-section::after {
         content: '';
         position: absolute;
-        top: -3px;
+        top: -2px;
         left: 0;
         right: 0;
-        height: 6px;
-        background: linear-gradient(90deg, transparent 10%, #6ca0dc 30%, #ffffff 50%, #427aa1 70%, transparent 90%);
-        opacity: 0.8;
+        height: 3px;
+        background: linear-gradient(90deg, transparent 20%, #6ca0dc 50%, transparent 80%);
+        opacity: 0.6;
         border-radius: 20px 20px 0 0;
-    }}    .hero-title {
+        z-index: 3;
+    }      .hero-title {
         font-size: 2.8rem; 
         font-weight: 800; 
-        margin-bottom: 1rem; 
+        margin: 0 auto 1rem auto; 
         text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
         letter-spacing: -0.03em;
         color: white;
@@ -86,27 +113,22 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         background-clip: text;
         animation: titleShine 3s ease-in-out infinite;
+        transition: transform 0.3s ease;
+        text-align: center;
+        width: 100%;
+        display: block;
     }
     
-    @keyframes titleShine {
+    .hero-section:hover .hero-title {
+        transform: scale(1.02);
+    }
+      @keyframes titleShine {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.9; }
-    }
-      .hero-title::after {
-        content: '';
-        position: absolute;
-        bottom: -12px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 140px;
-        height: 4px;
-        background: linear-gradient(90deg, transparent, #6ca0dc 20%, #ffffff 50%, #427aa1 80%, transparent);
-        border-radius: 2px;
-        opacity: 0.9;
-    }}    .hero-subtitle {
+    }      .hero-subtitle {
         font-size: 1.3rem; 
         font-weight: 400; 
-        margin: 0.8rem auto 1.2rem auto; 
+        margin: 0 auto 1.2rem auto; 
         opacity: 0.95; 
         line-height: 1.6;
         max-width: 85%;
@@ -116,25 +138,80 @@ st.markdown("""
         position: relative;
         z-index: 2;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        transition: opacity 0.3s ease;
+        width: 100%;
+        display: block;
+    }
+    
+    .hero-section:hover .hero-subtitle {
+        opacity: 1;
     }
     
     .hero-subtitle strong {
         color: #e3f2fd;
         font-weight: 600;
-    }.step-header {
+    }    /* Enhanced Step Headers with Completion States */    .step-header {
         background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
-        padding: 1.2rem 1.5rem;
-        border-left: 4px solid #3478bd;
-        border-radius: 0 10px 10px 0;
-        margin: 2rem 0 1.5rem 0;
-        box-shadow: 0 4px 15px rgba(52, 120, 189, 0.3);
+        padding: 1.3rem 1.8rem;
+        border-left: 5px solid #3478bd;
+        border-radius: 0 12px 12px 0;
+        margin: 2.5rem 0 1.8rem 0;
+        box-shadow: 0 6px 20px rgba(52, 120, 189, 0.25);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        cursor: pointer;
+        border-top: 1px solid rgba(52, 120, 189, 0.2);
+        border-bottom: 1px solid rgba(52, 120, 189, 0.2);
     }
+      .step-header:hover {
+        transform: translateX(5px);
+        box-shadow: 0 8px 30px rgba(52, 120, 189, 0.35);
+        background: linear-gradient(135deg, #e8effc 0%, #d5e4f7 100%);
+        border-left-color: #2563eb;
+    }
+    
+    .step-header.step-completed {
+        background: linear-gradient(135deg, #d1f2eb 0%, #a3e3d0 100%);
+        border-left-color: #16a085;
+        box-shadow: 0 6px 20px rgba(22, 160, 133, 0.3);
+    }
+    
+    .step-header.step-completed:hover {
+        background: linear-gradient(135deg, #d8f5ee 0%, #b0e7d5 100%);
+        border-left-color: #0e8f7a;
+        box-shadow: 0 8px 30px rgba(22, 160, 133, 0.4);
+    }
+      .step-header.step-completed::after {
+        content: '✓';
+        position: absolute;
+        top: 50%;
+        right: 1.8rem;
+        transform: translateY(-50%);
+        font-size: 1.8rem;
+        color: #16a085;
+        font-weight: bold;
+        text-shadow: 0 2px 4px rgba(22, 160, 133, 0.3);
+    }
+    
     .step-header h2 {
         margin: 0;
         color: #2c3e50;
-        font-weight: 600;
-        font-size: 1.5rem;
+        font-weight: 700;
+        font-size: 1.6rem;
+        transition: color 0.3s ease;
+        position: relative;
+        z-index: 2;
     }
+    
+    .step-header:hover h2 {
+        color: #1a252f;
+    }
+    
+    .step-header.step-completed h2 {
+        color: #0d5f4e;
+    }
+
+    /* Enhanced Cards and Interactive Elements */
     .professional-card {
         background: white;
         padding: 1.5rem;
@@ -142,21 +219,174 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         border: 1px solid #e1e5e9;
         margin: 1rem 0;
-    }    .stButton > button {
-        background: linear-gradient(135deg, #4f86f7 0%, #6bcff6 100%);
-        color: #2c3e50;
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(79, 134, 247, 0.3);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
     }
+    
+    .professional-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(108, 160, 220, 0.1), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .professional-card:hover::before {
+        left: 100%;
+    }
+    
+    .professional-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        border-color: #6ca0dc;
+    }    /* Enhanced Buttons with Minimal Micro-Interactions */
+    .stButton > button {
+        background: linear-gradient(135deg, #4f86f7 0%, #6bcff6 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.75rem 2rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(79, 134, 247, 0.2);
+        text-transform: none;
+        letter-spacing: 0.3px;
+        border: 1px solid transparent;
+    }
+    
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(79, 134, 247, 0.4);
-    }    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #f0f4ff 0%, #ffffff 100%);
+        box-shadow: 0 6px 18px rgba(79, 134, 247, 0.3);
+        background: linear-gradient(135deg, #5f96ff 0%, #7bdcff 100%);
+    }
+    
+    .stButton > button:active {
+        transform: translateY(-1px);
+        transition: all 0.15s ease;
+        box-shadow: 0 4px 12px rgba(79, 134, 247, 0.3);
+    }
+    
+    .stButton > button:disabled {
+        background: linear-gradient(135deg, #94a3b8 0%, #cbd5e1 100%);
+        color: #64748b;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: 0 2px 8px rgba(148, 163, 184, 0.2);
+    }
+    
+    .stButton > button:disabled:hover {
+        transform: none;
+        box-shadow: 0 2px 8px rgba(148, 163, 184, 0.2);
+        background: linear-gradient(135deg, #94a3b8 0%, #cbd5e1 100%);
+        border-color: transparent;
+    }    /* Enhanced Sidebar Styling */
+    .sidebar .sidebar-content {
+        background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%);
+    }
+    
+    /* Enhanced File Uploader */
+    .stFileUploader > div > div {
+        transition: all 0.3s ease;
+        border-radius: 10px;
+    }
+    
+    .stFileUploader > div > div:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Enhanced Selectbox and Text Area */
+    .stSelectbox > div > div {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .stSelectbox > div > div:hover {
+        box-shadow: 0 4px 12px rgba(79, 134, 247, 0.2);
+        transform: translateY(-1px);
+    }
+    
+    .stTextArea > div > div > textarea {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .stTextArea > div > div > textarea:focus {
+        box-shadow: 0 6px 20px rgba(79, 134, 247, 0.3);
+        transform: scale(1.01);
+    }
+
+    /* Enhanced Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        transform: translateY(-2px);
+        background-color: rgba(79, 134, 247, 0.1);
+    }
+
+    /* Enhanced Metrics */
+    .stMetric {
+        transition: all 0.3s ease;
+        padding: 1rem;
+        border-radius: 8px;
+    }
+    
+    .stMetric:hover {
+        background-color: rgba(79, 134, 247, 0.05);
+        transform: scale(1.02);
+    }
+
+    /* Enhanced Expanders */
+    .streamlit-expanderHeader {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .streamlit-expanderHeader:hover {
+        background-color: rgba(79, 134, 247, 0.1);
+        transform: translateX(5px);
+    }    /* Column hover effects */
+    .stColumn {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .stColumn:hover {
+        background-color: rgba(79, 134, 247, 0.02);
+    }
+
+    /* Info/Warning/Error box enhancements */
+    .stAlert {
+        border-radius: 10px;
+        transition: all 0.3s ease;
+    }
+    
+    .stAlert:hover {
+        transform: scale(1.01);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Dataframe styling */
+    .stDataFrame {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .stDataFrame:hover {
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -294,8 +524,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
+
 # Step 1: Data Upload
-st.markdown('<div class="step-header"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
+step1_class = "step-completed" if st.session_state.get('data_loaded', False) else ""
+st.markdown(f'<div class="step-header {step1_class}"><h2>📁 Step 1: Data Upload</h2></div>', unsafe_allow_html=True)
 
 # Create tabs for better organization - maintain active tab state
 tab1, tab2 = st.tabs(["📤 Upload Your Own Data", "📊 Use Sample Dataset"])
@@ -403,7 +636,8 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             Variables include transportation method, distance, fuel type, vehicle type, weather conditions, and resulting emissions. 
             The goal is to identify causal factors that could reduce environmental impact in logistics operations.
             """)    # Step 2: Domain Constraints (AI-Powered)
-    st.markdown('<div class="step-header"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
+    step2_class = "step-completed" if st.session_state.get('domain_constraints_generated', False) else ""
+    st.markdown(f'<div class="step-header {step2_class}"><h2>🧠 Step 2: Domain Constraints (AI-Powered)</h2></div>', unsafe_allow_html=True)
     
     domain_context = st.text_area(
         "Describe your domain/business context:",
@@ -543,31 +777,38 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                     analyzer.domain_constraints = None
                     st.rerun()
         else:
-            st.info("No constraints in pool. Add some above or skip to use defaults.")
-    # Step 3: Causal Discovery
-    st.markdown('<div class="step-header"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
+            st.info("No constraints in pool. Add some above or skip to use defaults.")    # Step 3: Causal Discovery
+    step3_completed = st.session_state.get('causal_discovery_completed', False)
+    step3_class = "step-completed" if step3_completed else ""
+    st.markdown(f'<div class="step-header {step3_class}"><h2>🔍 Step 3: Causal Discovery</h2></div>', unsafe_allow_html=True)
     
     # Add validation for constraints
     constraints_ready = (
         st.session_state.get('domain_constraints_generated') or 
         st.checkbox("Skip AI constraints (use default)", help="Run discovery without AI-generated constraints", key="skip_constraints_checkbox")    )
-    
     if st.button("🚀 Run Causal Discovery", type="primary", disabled=not constraints_ready, key="run_causal_discovery_btn"):
         with st.spinner("Discovering causal relationships..."):
             active_constraints = st.session_state.get('constraints_data', {})
             success = analyzer.run_causal_discovery(active_constraints)
-            
+        
         if success:
             st.session_state['causal_discovery_completed'] = True
             st.session_state['last_action'] = 'discovery_completed'
-            st.success("✅ Causal discovery completed!")
+              # Success message
+            st.success("🎉 Causal discovery completed successfully!")
             
             if active_constraints:
-                st.info(f"🧠 Used AI constraints: {len(active_constraints.get('forbidden_edges', []))} forbidden edges, {len(active_constraints.get('required_edges', []))} required edges")
+                constraint_count = len(active_constraints.get('forbidden_edges', [])) + len(active_constraints.get('required_edges', []))
+                st.info(f"🧠 Applied {constraint_count} AI-powered domain constraints to guide discovery")
+                  # Trigger page refresh to show updated step header
+            st.rerun()
         else:
             st.session_state['causal_discovery_completed'] = False
             st.session_state['last_action'] = 'discovery_failed'
-            # Note: Specific error messages are already displayed by the discovery module
+            
+            # Error message
+            st.error("❌ Causal discovery encountered an error")
+            
             # Show helpful guidance for next steps
             with st.expander("💡 Troubleshooting Help", expanded=False):
                 st.markdown("""
@@ -648,34 +889,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                     for corr in strong_corr[:5]:
                         st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
                 else:
-                    st.write("No strong correlations (>0.5) found")# Step 5: Causal Inference Analysis
-    # ===================================================================
-    # TEMPORAL SOLUTION: Current implementation focuses on numeric outcomes
-    # 
-    # FUTURE RESEARCH & DEVELOPMENT AREAS:
-    # 1. Categorical Outcomes Support:
-    #    - DoWhy supports binary outcomes (0/1, True/False, Success/Failure)
-    #    - Multi-class categorical outcomes (A/B/C categories)
-    #    - Ordinal outcomes (Low/Medium/High with order)
-    # 
-    # 2. Effect Measures for Categorical Outcomes:
-    #    - Risk Ratios for binary outcomes
-    #    - Odds Ratios for logistic models
-    #    - Risk Differences (absolute effect measures)
-    #    - Multinomial effect measures for multi-class outcomes
-    # 
-    # 3. Implementation Requirements:
-    #    - Extend CausalAnalyzer to detect outcome types
-    #    - Implement appropriate DoWhy estimators for categorical outcomes
-    #    - Add effect measure selection UI for categorical outcomes
-    #    - Adapt result interpretation for categorical effects
-    # 
-    # 4. DoWhy Resources:
-    #    - Documentation: https://py-why.github.io/dowhy/
-    #    - Binary outcome examples in DoWhy tutorials
-    #    - Logistic regression estimators for binary outcomes
-    # ===================================================================
-    
+                    st.write("No strong correlations (>0.5) found")    # Step 5: Causal Inference Analysis
     st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
     
     # Check if causal discovery has been run
@@ -716,20 +930,17 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                 # 1. Binary outcomes (e.g., success/failure, hired/not hired) using logistic regression
                 # 2. Multi-class categorical outcomes using multinomial models
                 # 3. Ordinal outcomes with appropriate effect measures
-                # 4. Different effect measures for categorical outcomes (risk ratios, odds ratios, etc.)
+                # 
+                # 2. Different effect measures for categorical outcomes (risk ratios, odds ratios, etc.)
                 # See DoWhy documentation: https://py-why.github.io/dowhy/
                 
                 # Outcome should be numeric for meaningful measurement (current limitation)
                 available_outcomes = [col for col in numeric_columns if col != treatment_var]
                 if not available_outcomes:
-                    st.error(f"❌ **No numeric variables available for outcome.**")
-                    st.error(f"💡 **Selected treatment:** '{treatment_var}' ({'numeric' if treatment_var in numeric_columns else 'categorical'})")
-                    st.error(f"📊 **Available numeric variables:** {', '.join(numeric_columns) if numeric_columns else 'None'}")
-                    st.error("**Solution:** Select a different treatment variable or ensure your data has numeric outcome variables.")
-                    st.info("🔬 **Future Enhancement:** Categorical outcomes will be supported in future versions using DoWhy's categorical outcome capabilities.")
+                    st.error(f"❌ **No numeric outcome variables available.** Selected treatment: '{treatment_var}' ({'numeric' if treatment_var in numeric_columns else 'categorical'})")
+                    st.info("💡 **Solution:** Select a different treatment variable or ensure your data has numeric outcome variables.")
                     st.stop()
-                
-                # Preserve the previous outcome selection if it's still valid
+                  # Preserve the previous outcome selection if it's still valid
                 previous_outcome = st.session_state.get('previous_outcome_var')
                 default_index = 0
                 
@@ -743,17 +954,17 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                     "Outcome Variable (Effect)", 
                     options=available_outcomes,
                     index=default_index,
-                    key="outcome_select",                    help="Select a numeric variable that represents the outcome you want to measure"                )                  # Store the current outcome selection for next time
+                    key="outcome_select",
+                    help="Select a numeric variable that represents the outcome you want to measure"
+                )
+                
+                # Store the current outcome selection for next time
                 st.session_state['previous_outcome_var'] = outcome_var
             
             if st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference_btn"):
                 if treatment_var != outcome_var:
-                    # TEMPORAL SOLUTION: Final validation restricts to numeric outcomes only
-                    # TODO: Extend to support categorical outcomes using DoWhy's capabilities
-                    # DoWhy supports binary and categorical outcomes through different estimators
                     if outcome_var not in numeric_columns:
-                        st.error(f"❌ **Validation Error:** Outcome variable '{outcome_var}' must be numeric for causal effect estimation.")
-                        st.error("🔬 **Note:** This is a temporary limitation. DoWhy supports categorical outcomes but requires additional implementation.")
+                        st.error(f"❌ **Outcome variable '{outcome_var}' must be numeric.**")
                         st.stop()
                     
                     with st.spinner("Running causal inference..."):
@@ -763,26 +974,38 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                             st.session_state['selected_treatment'] = treatment_var
                             st.session_state['selected_outcome'] = outcome_var
                             st.session_state['last_action'] = 'inference_completed'
+                              # Simple success message
+                            st.success("✅ Causal inference completed successfully!")
+                            
                         except Exception as e:
+                            # Error message with actual error details
                             st.error(f"❌ **Causal Inference Error:** {str(e)}")
-                            st.error("💡 **Troubleshooting:** Try selecting different variables or check data quality.")
+                            st.info("💡 **Troubleshooting:** Try selecting different variables or check data quality.")
                 else:
                     st.error("❌ Please select different variables for treatment and outcome")
-    
-    # Display results
+      # Display results
     if st.session_state.get('ate_results'):
         ate_results = st.session_state['ate_results']
         treatment_var = st.session_state['selected_treatment']
         outcome_var = st.session_state['selected_outcome']
-        
-        st.success("✅ Causal inference completed!")
           # Main result
         st.subheader("📊 Main Result")
         col1, col2 = st.columns([1, 2])
         
         with col1:
+            # Add effect size context to the metric
+            effect_size = abs(ate_results.get('consensus_estimate', 0))
+            if effect_size > 1:
+                effect_label = "Large Effect"
+            elif effect_size > 0.5:
+                effect_label = "Moderate Effect"
+            elif effect_size > 0.1:
+                effect_label = "Small Effect"
+            else:
+                effect_label = "Very Small Effect"
+                
             st.metric(
-                "Causal Effect Estimate", 
+                f"Causal Effect Estimate ({effect_label})", 
                 f"{ate_results['consensus_estimate']:.4f}"
             )
         
@@ -839,8 +1062,7 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                         st.session_state['traditional_results'] = None
                         st.session_state['comparison_results'] = None
                         st.rerun()
-                
-                # Single key insight
+                  # Single key insight
                 if comp_results['key_differences']:
                     max_diff = max([diff['percent_difference'] for diff in comp_results['key_differences']])
                     if max_diff > 20:
