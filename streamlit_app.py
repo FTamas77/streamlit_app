@@ -391,12 +391,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize analyzer
-@st.cache_resource
+# Initialize analyzer per user session
 def get_analyzer():
-    # This creates ONE shared analyzer instance for ALL users
-    # But each user's data and results are kept separate via session_state
-    return CausalAnalyzer()
+    """Get or create analyzer instance for this user session"""
+    if 'analyzer' not in st.session_state:
+        st.session_state['analyzer'] = CausalAnalyzer()
+    return st.session_state['analyzer']
 
 analyzer = get_analyzer()
 
