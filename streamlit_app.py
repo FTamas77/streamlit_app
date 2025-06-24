@@ -38,46 +38,102 @@ st.markdown("""
 <style>
     .main-container {
         max-width: 1200px;
-        margin: 0 auto;
-    }    .hero-section {
+        margin: 0 auto;    }    .hero-section {
         text-align: center; 
-        padding: 2.5rem 2rem; 
-        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%); 
-        border-radius: 15px; 
-        margin-bottom: 2.5rem; 
-        color: #2c3e50;
-        box-shadow: 0 10px 30px rgba(255, 154, 158, 0.3);
-    }    .hero-title {
-        font-size: 2.8rem; 
-        font-weight: 700; 
-        margin-bottom: 0.8rem; 
-        text-shadow: 1px 1px 3px rgba(0,0,0,0.15);
-        letter-spacing: -0.02em;        color: #2c3e50;
-    }    .hero-subtitle {
-        font-size: 1.2rem; 
-        font-weight: 400; 
-        margin: 1rem 0 0 0; 
-        opacity: 0.95; 
-        line-height: 1.7;
-        max-width: 95%;
-        margin-left: auto;
-        margin-right: auto;
-        color: #2c3e50;
-        text-align: center;
-        padding: 0 1rem;
+        padding: 1.5rem 2rem; 
+        background: linear-gradient(135deg, #004c6d 0%, #427aa1 50%, #6ca0dc 100%); 
+        border-radius: 20px; 
+        margin-bottom: 3rem; 
+        color: white;
+        box-shadow: 0 15px 40px rgba(0, 76, 109, 0.4), 0 5px 15px rgba(0, 76, 109, 0.2);
+        position: relative;
+        overflow: hidden;
     }
-    .step-header {
-        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+    
+    .hero-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                    radial-gradient(circle at 70% 80%, rgba(108, 160, 220, 0.2) 0%, transparent 50%);
+        pointer-events: none;
+    }
+      .hero-section::after {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: linear-gradient(90deg, transparent 10%, #6ca0dc 30%, #ffffff 50%, #427aa1 70%, transparent 90%);
+        opacity: 0.8;
+        border-radius: 20px 20px 0 0;
+    }}    .hero-title {
+        font-size: 2.8rem; 
+        font-weight: 800; 
+        margin-bottom: 1rem; 
+        text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+        letter-spacing: -0.03em;
+        color: white;
+        line-height: 1.1;
+        position: relative;
+        z-index: 2;
+        background: linear-gradient(45deg, #ffffff 0%, #e3f2fd 50%, #ffffff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: titleShine 3s ease-in-out infinite;
+    }
+    
+    @keyframes titleShine {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.9; }
+    }
+      .hero-title::after {
+        content: '';
+        position: absolute;
+        bottom: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 140px;
+        height: 4px;
+        background: linear-gradient(90deg, transparent, #6ca0dc 20%, #ffffff 50%, #427aa1 80%, transparent);
+        border-radius: 2px;
+        opacity: 0.9;
+    }}    .hero-subtitle {
+        font-size: 1.3rem; 
+        font-weight: 400; 
+        margin: 0.8rem auto 1.2rem auto; 
+        opacity: 0.95; 
+        line-height: 1.6;
+        max-width: 85%;
+        color: rgba(255, 255, 255, 0.95);
+        text-align: center;
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+        position: relative;
+        z-index: 2;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .hero-subtitle strong {
+        color: #e3f2fd;
+        font-weight: 600;
+    }.step-header {
+        background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
         padding: 1.2rem 1.5rem;
-        border-left: 4px solid #e17055;
+        border-left: 4px solid #3478bd;
         border-radius: 0 10px 10px 0;
         margin: 2rem 0 1.5rem 0;
-        box-shadow: 0 4px 15px rgba(252, 182, 159, 0.3);
+        box-shadow: 0 4px 15px rgba(52, 120, 189, 0.3);
     }
     .step-header h2 {
         margin: 0;
         color: #2c3e50;
         font-weight: 600;
+        font-size: 1.5rem;
     }
     .professional-card {
         background: white;
@@ -87,20 +143,20 @@ st.markdown("""
         border: 1px solid #e1e5e9;
         margin: 1rem 0;
     }    .stButton > button {
-        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        background: linear-gradient(135deg, #4f86f7 0%, #6bcff6 100%);
         color: #2c3e50;
         border: none;
         border-radius: 8px;
         padding: 0.6rem 1.5rem;
         font-weight: 500;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(255, 154, 158, 0.3);
+        box-shadow: 0 4px 15px rgba(79, 134, 247, 0.3);
     }
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(255, 154, 158, 0.4);
+        box-shadow: 0 6px 20px rgba(79, 134, 247, 0.4);
     }    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #fff5f5 0%, #ffffff 100%);
+        background: linear-gradient(180deg, #f0f4ff 0%, #ffffff 100%);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -227,14 +283,13 @@ with st.sidebar:
     st.markdown("**🧪 Scientific Approach:**")
     st.markdown("DirectLiNGAM → DoWhy → AI Analysis")
 
-# Main interface with professional hero section
+# Main interface with enhanced hero section
 st.markdown("""
 <div class="hero-section">
     <h1 class="hero-title">Causal AI Platform</h1>
     <p class="hero-subtitle">
-        Discover causal relationships and quantify treatment effects with advanced AI-powered analysis. 
-        Our platform combines cutting-edge algorithms with intelligent domain expertise to uncover hidden patterns, 
-        measure intervention impacts, and deliver actionable insights for data-driven decision making.
+        Discover <strong>causal relationships</strong> and quantify <strong>treatment effects</strong> with advanced AI-powered analysis.<br>
+        Transform your data into actionable insights with cutting-edge algorithms and intelligent domain expertise.
     </p>
 </div>
 """, unsafe_allow_html=True)
