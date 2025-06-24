@@ -25,9 +25,7 @@ class CausalAnalyzer:
         self.domain_constraints = None
         
         # Store discovery results (coordinator pattern)
-        self.discovery_results = None
-
-    # Properties to access discovery results without redundancy
+        self.discovery_results = None    # Properties to access discovery results without redundancy
     @property
     def adjacency_matrix(self):
         """Get adjacency matrix from discovery results"""
@@ -54,24 +52,20 @@ class CausalAnalyzer:
         return self.discovery_results['model'] if self.discovery_results else None
 
     def get_numeric_columns(self):
-        """Get list of numeric columns available for causal analysis"""
-        if self.encoded_data is not None:
-            # Use encoded data columns from discovery results
-            return list(self.encoded_data.columns)
-        elif self.data is not None:
-            # Fallback: determine numeric columns from original data
-            return list(self.data.select_dtypes(include=[np.number]).columns)
+        """Get list of numeric columns from original data (before encoding)"""
+        if self.data is not None:
+            # Always use original data to determine truly numeric columns
+            numeric_cols = list(self.data.select_dtypes(include=[np.number]).columns)
+            return numeric_cols
         else:
             return []
     
     def get_categorical_columns(self):
-        """Get list of categorical columns that were processed during discovery"""
-        if self.categorical_mappings:
-            # Return columns that have categorical mappings
-            return list(self.categorical_mappings.keys())
-        elif self.data is not None:
-            # Fallback: determine categorical columns from original data
-            return list(self.data.select_dtypes(exclude=[np.number]).columns)
+        """Get list of categorical columns from original data (before encoding)"""
+        if self.data is not None:
+            # Always use original data to determine truly categorical columns
+            categorical_cols = list(self.data.select_dtypes(exclude=[np.number]).columns)
+            return categorical_cols
         else:
             return []
         
@@ -286,8 +280,8 @@ class CausalAnalyzer:
         Raises:
             ValueError: If inputs are invalid, data is insufficient, or causal discovery not run
             ImportError: If DoWhy is not available
-            RuntimeError: If causal inference fails
-        """        # Pre-validation checks
+            RuntimeError: If causal inference fails        """
+        # Pre-validation checks
         if not DOWHY_AVAILABLE:
             raise ImportError("DoWhy is required for ATE calculation but not available. Please install DoWhy.")
         
@@ -295,11 +289,12 @@ class CausalAnalyzer:
             raise ValueError("No data loaded. Please load data before calculating ATE.")
         
         if self.data.empty:
-            raise ValueError("Data is empty. Cannot calculate ATE.")        # Check if causal discovery has been run
+            raise ValueError("Data is empty. Cannot calculate ATE.")
+        
+        # Check if causal discovery has been run
         if self.adjacency_matrix is None:
             raise ValueError("Causal discovery must be run before causal inference. Please run causal discovery first.")
-        
-        # Input validation
+          # Input validation
         if not treatment or not isinstance(treatment, str):
             raise ValueError(f"Treatment must be a non-empty string, got: {treatment}")
         
@@ -307,7 +302,9 @@ class CausalAnalyzer:
             raise ValueError(f"Outcome must be a non-empty string, got: {outcome}")
         
         if treatment == outcome:
-            raise ValueError("Treatment and outcome variables cannot be the same")          # Get available columns for validation
+            raise ValueError("Treatment and outcome variables cannot be the same")
+        
+        # Get available columns for validation
         available_columns = set(self.data.columns)
         if self.encoded_data is not None:
             available_columns.update(self.encoded_data.columns)
@@ -322,29 +319,31 @@ class CausalAnalyzer:
         if missing_vars:
             available_list = sorted(list(available_columns))
             raise ValueError(f"Variables not found: {', '.join(missing_vars)}. Available columns: {available_list}")
-        
-        # Data quality checks
+          # Data quality checks
         try:
             # Check if we have sufficient data for the analysis
-            analysis_cols = [treatment, outcome]
-              # Determine which dataset to check
+            analysis_cols = [treatment, outcome]            # Determine which dataset to use for validation
             data_to_check = self.data
-            if (self.encoded_data is not None and
-                any(col.endswith('_Code') for col in analysis_cols)):
+            
+            # Use encoded data if it contains the treatment variable (handles categorical treatments)
+            if (self.encoded_data is not None and 
+                treatment in self.encoded_data.columns):
                 data_to_check = self.encoded_data
             
-            # Check if all required columns exist in the selected dataset
-            missing_in_selected = [col for col in analysis_cols if col not in data_to_check.columns]
-            if missing_in_selected:
-                # Try the other dataset
-                if data_to_check is self.data and self.encoded_data is not None:
+            # Verify both variables exist in the selected dataset
+            if treatment not in data_to_check.columns:
+                if self.encoded_data is not None and treatment in self.encoded_data.columns:
                     data_to_check = self.encoded_data
-                elif data_to_check is not self.data:
-                    data_to_check = self.data
-                
-                missing_in_selected = [col for col in analysis_cols if col not in data_to_check.columns]
-                if missing_in_selected:
-                    raise ValueError(f"Variables not found in any dataset: {missing_in_selected}")
+                else:
+                    raise ValueError(f"Treatment variable '{treatment}' not found in any dataset")
+                    
+            if outcome not in data_to_check.columns:
+                # For outcome, check original data if not in current dataset
+                if outcome in self.data.columns:
+                    # Keep using current data_to_check for treatment, outcome will be handled in inference
+                    pass
+                else:
+                    raise ValueError(f"Outcome variable '{outcome}' not found in data")
             
             # Check data completeness
             analysis_data = data_to_check[analysis_cols]
@@ -364,12 +363,24 @@ class CausalAnalyzer:
         try:
             from causal_ai.inference import calculate_ate
             
-            # Determine which data to use (encoded if available and needed)
+            # Determine which data to use based on where variables are found
             data_to_use = self.data
+            
+            # Use encoded data if it exists and contains the treatment variable
+            # (This handles categorical treatments that have been encoded in-place)
             if (self.encoded_data is not None and 
-                (treatment.endswith('_Code') or outcome.endswith('_Code') or 
-                 (self.columns and any(col.endswith('_Code') for col in self.columns)))):
+                treatment in self.encoded_data.columns and 
+                outcome in self.encoded_data.columns):
                 data_to_use = self.encoded_data
+            elif (self.encoded_data is not None and 
+                  treatment in self.encoded_data.columns and 
+                  outcome in self.data.columns):
+                # Special case: categorical treatment in encoded data, numeric outcome in original data
+                # We need to use encoded data but verify outcome exists
+                if outcome in self.data.columns:
+                    data_to_use = self.encoded_data
+                else:
+                    raise ValueError(f"Outcome variable '{outcome}' not found in either dataset")
             
             result = calculate_ate(
                 data=data_to_use,
