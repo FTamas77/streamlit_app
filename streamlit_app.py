@@ -649,17 +649,49 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                         st.write(f"**{corr['var1']}** ↔ **{corr['var2']}**: {corr['correlation']:.3f}")
                 else:
                     st.write("No strong correlations (>0.5) found")# Step 5: Causal Inference Analysis
+    # ===================================================================
+    # TEMPORAL SOLUTION: Current implementation focuses on numeric outcomes
+    # 
+    # FUTURE RESEARCH & DEVELOPMENT AREAS:
+    # 1. Categorical Outcomes Support:
+    #    - DoWhy supports binary outcomes (0/1, True/False, Success/Failure)
+    #    - Multi-class categorical outcomes (A/B/C categories)
+    #    - Ordinal outcomes (Low/Medium/High with order)
+    # 
+    # 2. Effect Measures for Categorical Outcomes:
+    #    - Risk Ratios for binary outcomes
+    #    - Odds Ratios for logistic models
+    #    - Risk Differences (absolute effect measures)
+    #    - Multinomial effect measures for multi-class outcomes
+    # 
+    # 3. Implementation Requirements:
+    #    - Extend CausalAnalyzer to detect outcome types
+    #    - Implement appropriate DoWhy estimators for categorical outcomes
+    #    - Add effect measure selection UI for categorical outcomes
+    #    - Adapt result interpretation for categorical effects
+    # 
+    # 4. DoWhy Resources:
+    #    - Documentation: https://py-why.github.io/dowhy/
+    #    - Binary outcome examples in DoWhy tutorials
+    #    - Logistic regression estimators for binary outcomes
+    # ===================================================================
+    
     st.markdown('<div class="step-header"><h2>🔬 Step 5: Causal Inference Analysis</h2></div>', unsafe_allow_html=True)
     
     # Check if causal discovery has been run
     if analyzer.adjacency_matrix is None:
         st.warning("⚠️ **Causal discovery must be run before causal inference.** Please complete Step 3 first.")
         st.info("💡 **Why this matters:** Causal inference requires understanding the causal structure between variables, which is discovered in Step 3.")
-    elif analyzer.data is not None and not analyzer.data.empty:
-        # Get columns for causal analysis
+    elif analyzer.data is not None and not analyzer.data.empty:        # Get columns for causal analysis
         numeric_columns = analyzer.get_numeric_columns()
         categorical_columns = analyzer.get_categorical_columns()
         all_columns = numeric_columns + categorical_columns
+        
+        # Debug: Show what columns are detected
+        st.info(f"🔢 **Numeric columns** ({len(numeric_columns)}): {', '.join(numeric_columns) if numeric_columns else 'None found'}")
+        if categorical_columns:
+            with st.expander("📊 Categorical columns", expanded=False):
+                st.write(f"**{len(categorical_columns)} categorical variables:** {', '.join(categorical_columns)}")
         
         if len(all_columns) < 2:
             st.error("❌ Need at least 2 variables for causal analysis. Please ensure your data contains numeric or categorical columns.")
@@ -671,18 +703,30 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
             col1, col2 = st.columns(2)
             
             with col1:
-                treatment_var = st.selectbox(
-                    "Treatment Variable (Cause)",
+                treatment_var = st.selectbox(                    "Treatment Variable (Cause)",
                     options=all_columns,
                     key="treatment_select",
                     help="Select a variable that represents the intervention or treatment (both numeric and categorical treatments are supported)"
                 )
             
             with col2:
-                # Outcome should be numeric for meaningful measurement
+                # TEMPORAL SOLUTION: Currently restricting outcomes to numeric variables only
+                # FUTURE DEVELOPMENT NEEDED: DoWhy supports categorical outcomes for causal inference
+                # Research areas for enhancement:
+                # 1. Binary outcomes (e.g., success/failure, hired/not hired) using logistic regression
+                # 2. Multi-class categorical outcomes using multinomial models
+                # 3. Ordinal outcomes with appropriate effect measures
+                # 4. Different effect measures for categorical outcomes (risk ratios, odds ratios, etc.)
+                # See DoWhy documentation: https://py-why.github.io/dowhy/
+                
+                # Outcome should be numeric for meaningful measurement (current limitation)
                 available_outcomes = [col for col in numeric_columns if col != treatment_var]
                 if not available_outcomes:
-                    st.error("❌ No numeric variables available for outcome. At least one numeric variable is required as the outcome.")
+                    st.error(f"❌ **No numeric variables available for outcome.**")
+                    st.error(f"💡 **Selected treatment:** '{treatment_var}' ({'numeric' if treatment_var in numeric_columns else 'categorical'})")
+                    st.error(f"📊 **Available numeric variables:** {', '.join(numeric_columns) if numeric_columns else 'None'}")
+                    st.error("**Solution:** Select a different treatment variable or ensure your data has numeric outcome variables.")
+                    st.info("🔬 **Future Enhancement:** Categorical outcomes will be supported in future versions using DoWhy's categorical outcome capabilities.")
                     st.stop()
                 
                 # Preserve the previous outcome selection if it's still valid
@@ -699,19 +743,29 @@ if st.session_state.get('data_loaded') and analyzer.data is not None:
                     "Outcome Variable (Effect)", 
                     options=available_outcomes,
                     index=default_index,
-                    key="outcome_select",
-                    help="Select a numeric variable that represents the outcome you want to measure"                )
-                  # Store the current outcome selection for next time
+                    key="outcome_select",                    help="Select a numeric variable that represents the outcome you want to measure"                )                  # Store the current outcome selection for next time
                 st.session_state['previous_outcome_var'] = outcome_var
             
             if st.button("🔬 Run Causal Inference", type="primary", key="run_causal_inference_btn"):
                 if treatment_var != outcome_var:
+                    # TEMPORAL SOLUTION: Final validation restricts to numeric outcomes only
+                    # TODO: Extend to support categorical outcomes using DoWhy's capabilities
+                    # DoWhy supports binary and categorical outcomes through different estimators
+                    if outcome_var not in numeric_columns:
+                        st.error(f"❌ **Validation Error:** Outcome variable '{outcome_var}' must be numeric for causal effect estimation.")
+                        st.error("🔬 **Note:** This is a temporary limitation. DoWhy supports categorical outcomes but requires additional implementation.")
+                        st.stop()
+                    
                     with st.spinner("Running causal inference..."):
-                        ate_results = analyzer.calculate_ate(treatment_var, outcome_var)
-                        st.session_state['ate_results'] = ate_results
-                        st.session_state['selected_treatment'] = treatment_var
-                        st.session_state['selected_outcome'] = outcome_var
-                        st.session_state['last_action'] = 'inference_completed'
+                        try:
+                            ate_results = analyzer.calculate_ate(treatment_var, outcome_var)
+                            st.session_state['ate_results'] = ate_results
+                            st.session_state['selected_treatment'] = treatment_var
+                            st.session_state['selected_outcome'] = outcome_var
+                            st.session_state['last_action'] = 'inference_completed'
+                        except Exception as e:
+                            st.error(f"❌ **Causal Inference Error:** {str(e)}")
+                            st.error("💡 **Troubleshooting:** Try selecting different variables or check data quality.")
                 else:
                     st.error("❌ Please select different variables for treatment and outcome")
     
