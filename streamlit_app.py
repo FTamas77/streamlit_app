@@ -98,7 +98,7 @@ st.markdown("""
         opacity: 0.6;
         border-radius: 20px 20px 0 0;
         z-index: 3;
-    }      .hero-title {
+    }    .hero-title {
         font-size: 2.8rem; 
         font-weight: 800; 
         margin: 0 auto 1rem auto; 
@@ -114,9 +114,12 @@ st.markdown("""
         background-clip: text;
         animation: titleShine 3s ease-in-out infinite;
         transition: transform 0.3s ease;
-        text-align: center;
+        text-align: center !important;
         width: 100%;
         display: block;
+        margin-left: auto;
+        margin-right: auto;
+        box-sizing: border-box;
     }
     
     .hero-section:hover .hero-title {
@@ -125,15 +128,16 @@ st.markdown("""
       @keyframes titleShine {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.9; }
-    }      .hero-subtitle {
+    }    .hero-subtitle {
         font-size: 1.3rem; 
         font-weight: 400; 
         margin: 0 auto 1.2rem auto; 
         opacity: 0.95; 
         line-height: 1.6;
-        max-width: 85%;
+        max-width: 90%;
+        padding: 0 2rem;
         color: rgba(255, 255, 255, 0.95);
-        text-align: center;
+        text-align: center !important;
         text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
         position: relative;
         z-index: 2;
@@ -141,6 +145,9 @@ st.markdown("""
         transition: opacity 0.3s ease;
         width: 100%;
         display: block;
+        box-sizing: border-box;
+        margin-left: auto;
+        margin-right: auto;
     }
     
     .hero-section:hover .hero-subtitle {
