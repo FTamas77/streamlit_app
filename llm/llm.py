@@ -298,3 +298,185 @@ def combine_ai_and_manual_constraints(ai_constraints: Dict, manual_constraints: 
             combined['required_edges'].append(edge)
     
     return combined
+
+def suggest_data_requirements(business_problem: str, api_key: str = None) -> Dict:
+    """Use LLM to suggest what data to collect based on business problem
+    
+    Parameters:
+    - business_problem (str): Description of the business problem to solve
+    - api_key (str, optional): OpenAI API key
+    
+    Returns:
+    - Dict: Suggested data requirements and collection guidance
+    """
+    if not OPENAI_AVAILABLE:
+        st.warning("OpenAI not available. Skipping data requirements suggestion.")
+        return {"error": "OpenAI not available"}
+    
+    try:
+        effective_api_key = api_key
+        if not effective_api_key:
+            try:
+                effective_api_key = st.secrets.get("OPENAI_API_KEY", "")
+            except Exception:
+                effective_api_key = ""
+        
+        if not effective_api_key:
+            st.error("Please provide an OpenAI API key to use AI features")
+            return {"error": "No API key provided"}
+        
+        # Create the prompt
+        prompt = f"""
+        A business wants to solve this problem using causal analysis:
+        
+        Business Problem: {business_problem}
+        
+        As a causal inference expert, suggest what data they need to collect to perform effective causal analysis.
+        
+        Please provide your recommendations in the following JSON format:
+        {{
+            "outcome_variables": [
+                {{"name": "suggested_variable_name", "description": "what this measures", "why_important": "why this is key for the analysis", "data_type": "continuous/categorical", "collection_method": "how to collect this data"}}
+            ],
+            "treatment_variables": [
+                {{"name": "suggested_variable_name", "description": "what this measures", "why_important": "why this is key for the analysis", "data_type": "continuous/categorical", "collection_method": "how to collect this data"}}
+            ],
+            "confounding_variables": [
+                {{"name": "suggested_variable_name", "description": "what this measures", "why_important": "why this is key for the analysis", "data_type": "continuous/categorical", "collection_method": "how to collect this data"}}
+            ],
+            "data_collection_tips": [
+                "Collect at least 100-500 observations for reliable results",
+                "Ensure temporal ordering is clear (cause must precede effect)",
+                "Include pre-treatment measurements when possible"
+            ],
+            "analysis_approach": "Brief description of how this data would be used for causal analysis",
+            "success_metrics": ["How to measure if the analysis was successful"],
+            "potential_challenges": ["Common issues they might face with this type of analysis"]
+        }}
+
+        Guidelines:
+        1. Focus on variables that are CAUSALLY relevant (not just predictive)
+        2. Include variables that can be controlled/intervened upon (treatments)
+        3. Identify confounders that affect both treatments and outcomes
+        4. Suggest practical data collection methods
+        5. Consider temporal aspects (what happens when)
+        6. Think about sample size requirements
+        7. Address potential biases and data quality issues
+
+        Make suggestions specific to their business domain and problem.
+        """
+
+        # Call OpenAI API
+        client = openai.OpenAI(api_key=effective_api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert in causal inference and business analytics. Help businesses understand what data they need to collect to solve their problems using causal analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=2500
+        )
+        
+        # Parse the response
+        content = response.choices[0].message.content.strip()
+        
+        # Extract JSON from the response
+        if "```json" in content:
+            json_start = content.find("```json") + 7
+            json_end = content.find("```", json_start)
+            json_content = content[json_start:json_end].strip()
+        else:
+            json_content = content
+        
+        try:
+            result = json.loads(json_content)
+            result["success"] = True
+            return result
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            return {
+                "success": False,
+                "error": "Could not parse AI response",
+                "raw_response": content,
+                "data_collection_tips": ["Describe your business problem clearly", "Focus on variables you can control", "Include outcome measures"]
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"AI analysis failed: {str(e)}",
+            "data_collection_tips": ["Describe your business problem clearly", "Focus on variables you can control", "Include outcome measures"]
+        }
+
+def display_data_requirements(requirements: Dict):
+    """Display the AI data requirements in a user-friendly format"""
+    if not requirements.get("success", False):
+        st.error(f"❌ AI Analysis Error: {requirements.get('error', 'Unknown error')}")
+        if requirements.get("data_collection_tips"):
+            st.info("💡 Basic Tips: " + " • ".join(requirements["data_collection_tips"]))
+        return
+    
+    # Analysis approach overview
+    if requirements.get("analysis_approach"):
+        st.info(f"🎯 **Analysis Approach**: {requirements['analysis_approach']}")
+    
+    # Create tabs for different variable types
+    tabs = st.tabs(["🎯 Outcomes to Measure", "🎛️ Variables to Control", "⚖️ Confounders to Track", "📋 Collection Guide"])
+    
+    with tabs[0]:  # Outcomes
+        st.markdown("**Key outcomes you should measure:**")
+        outcomes = requirements.get("outcome_variables", [])
+        if outcomes:
+            for i, var in enumerate(outcomes, 1):
+                st.markdown(f"**{i}. {var.get('name', 'Variable')}** `({var.get('data_type', 'unknown')})`")
+                st.markdown(f"   • **What it measures**: {var.get('description', 'Not specified')}")
+                st.markdown(f"   • **Why important**: {var.get('why_important', 'Not specified')}")
+                st.markdown(f"   • **How to collect**: {var.get('collection_method', 'Not specified')}")
+                st.markdown("---")
+        else:
+            st.write("No specific outcome variables suggested.")
+    
+    with tabs[1]:  # Treatments
+        st.markdown("**Variables you can control or change (treatments/interventions):**")
+        treatments = requirements.get("treatment_variables", [])
+        if treatments:
+            for i, var in enumerate(treatments, 1):
+                st.markdown(f"**{i}. {var.get('name', 'Variable')}** `({var.get('data_type', 'unknown')})`")
+                st.markdown(f"   • **What it measures**: {var.get('description', 'Not specified')}")
+                st.markdown(f"   • **Why important**: {var.get('why_important', 'Not specified')}")
+                st.markdown(f"   • **How to collect**: {var.get('collection_method', 'Not specified')}")
+                st.markdown("---")
+        else:
+            st.write("No specific treatment variables suggested.")
+    
+    with tabs[2]:  # Confounders  
+        st.markdown("**Important background variables to track (confounders):**")
+        confounders = requirements.get("confounding_variables", [])
+        if confounders:
+            for i, var in enumerate(confounders, 1):
+                st.markdown(f"**{i}. {var.get('name', 'Variable')}** `({var.get('data_type', 'unknown')})`")
+                st.markdown(f"   • **What it measures**: {var.get('description', 'Not specified')}")
+                st.markdown(f"   • **Why important**: {var.get('why_important', 'Not specified')}")
+                st.markdown(f"   • **How to collect**: {var.get('collection_method', 'Not specified')}")
+                st.markdown("---")
+        else:
+            st.write("No specific confounding variables suggested.")
+    
+    with tabs[3]:  # Collection Guide
+        st.markdown("### 📋 **Data Collection Guidelines**")
+        
+        if requirements.get("data_collection_tips"):
+            st.markdown("**💡 Collection Tips:**")
+            for tip in requirements["data_collection_tips"]:
+                st.write(f"• {tip}")
+        
+        if requirements.get("success_metrics"):
+            st.markdown("**✅ Success Metrics:**")
+            for metric in requirements["success_metrics"]:
+                st.write(f"• {metric}")
+        
+        if requirements.get("potential_challenges"):
+            st.markdown("**⚠️ Potential Challenges:**")
+            for challenge in requirements["potential_challenges"]:
+                st.write(f"• {challenge}")

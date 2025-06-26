@@ -34,7 +34,7 @@ sys.path.append(os.path.dirname(__file__))
 
 # Core imports
 from causal_ai.analyzer import CausalAnalyzer
-from llm.llm import generate_domain_constraints, explain_results_with_llm
+from llm.llm import generate_domain_constraints, explain_results_with_llm, suggest_data_requirements, display_data_requirements
 from ui.components import (show_data_preview, show_data_quality_summary, 
                           show_correlation_heatmap, show_causal_graph, 
                           show_results_table, show_interactive_scenario_explorer, 
@@ -84,6 +84,79 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
+
+# ============================================================================
+# STEP 0: AI DATA REQUIREMENTS CONSULTANT
+# ============================================================================
+st.markdown('<div class="step-header"><h2>🤖 Step 0: What Data Do I Need? (AI Consultant)</h2></div>', unsafe_allow_html=True)
+st.markdown("*Start here if you're not sure what data to collect for your causal analysis*")
+
+with st.expander("💡 Not sure what data you need? Let AI help you!", expanded=False):
+    st.markdown("""
+    **Perfect for:**
+    - Planning a new data collection project
+    - Understanding what variables are important for causal analysis
+    - Getting guidance on research design
+    
+    **How it works:**
+    1. Describe your business problem
+    2. AI suggests what data to collect
+    3. Get practical collection methods and tips
+    """)
+    
+    # Business problem input
+    business_problem = st.text_area(
+        "Describe your business problem:",
+        placeholder="e.g., 'We want to understand if our marketing campaigns actually increase sales, or if it's just correlation. We need to optimize our marketing budget allocation.'",
+        height=100,
+        key="business_problem_input",
+        help="Be specific about what you want to achieve and what decisions you need to make"
+    )
+    
+    # Button to get AI suggestions
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        get_requirements_btn = st.button(
+            "🧠 Get Data Requirements", 
+            type="primary",
+            key="get_requirements_btn",
+            disabled=not business_problem.strip(),
+            help="AI will suggest what data to collect for your problem"
+        )
+    
+    with col2:
+        if not st.session_state.get('openai_api_key'):
+            st.warning("🔑 Add OpenAI API key in sidebar to use AI consultant")
+    
+    # Get AI suggestions
+    if get_requirements_btn and business_problem.strip():
+        if st.session_state.get('openai_api_key'):
+            with st.spinner("🤖 AI is analyzing your business problem..."):
+                requirements = suggest_data_requirements(
+                    business_problem.strip(),
+                    st.session_state.get('openai_api_key')
+                )
+                
+                # Store results in session state for persistence
+                st.session_state['data_requirements'] = requirements
+                st.session_state['requirements_generated'] = True
+                
+        else:
+            st.error("Please add your OpenAI API key in the sidebar to use the AI consultant")
+    
+    # Display results if available
+    if st.session_state.get('requirements_generated') and st.session_state.get('data_requirements'):
+        st.markdown("### 📊 **AI Data Requirements for Your Problem**")
+        display_data_requirements(st.session_state['data_requirements'])
+        
+        # Option to clear requirements
+        if st.button("🗑️ Clear Requirements", key="clear_requirements"):
+            st.session_state['data_requirements'] = None
+            st.session_state['requirements_generated'] = False
+            st.rerun()
+        
+        # Transition message
+        st.success("✅ **Next Step**: Once you've collected this data, upload it below to start your causal analysis!")
 
 # ============================================================================
 # STEP 1: DATA UPLOAD & MANAGEMENT
