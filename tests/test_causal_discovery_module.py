@@ -90,9 +90,9 @@ def test_causal_discovery_with_constraints():
     
     # Define constraints
     constraints = {
-        "forbidden": [
-            "C -> A",  # Forbid reverse causation
-            "B -> A"   # Forbid reverse causation  
+        "forbidden_edges": [
+            ["C", "A"],  # Forbid reverse causation
+            ["B", "A"]   # Forbid reverse causation  
         ]
     }
     
