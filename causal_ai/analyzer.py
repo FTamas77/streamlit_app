@@ -50,6 +50,11 @@ class CausalAnalyzer:
     def discovery_model(self):
         """Get discovery model from discovery results"""
         return self.discovery_results['model'] if self.discovery_results else None
+    
+    @property
+    def constraint_issues(self):
+        """Get constraint issues from discovery"""
+        return self.discovery_results.get('constraint_issues', []) if self.discovery_results else []
 
     def get_numeric_columns(self):
         """Get list of numeric columns from original data (before encoding)"""
@@ -230,11 +235,18 @@ class CausalAnalyzer:
         if self.data.empty:
             raise ValueError("Data is empty. Cannot perform causal discovery.")
         
-        try:            # Run discovery and capture all results
+        try:
+            # Run discovery and capture all results
             discovery_results = self.discovery.run_discovery(self.data, constraints)
             
             if discovery_results is not None:
-                # Store discovery results - properties will access them
+                # Check if discovery failed due to constraint issues
+                if discovery_results.get('error'):
+                    # Store the error results for UI to handle
+                    self.discovery_results = discovery_results
+                    return False
+                
+                # Store successful discovery results
                 self.discovery_results = discovery_results
                 
                 if self.adjacency_matrix is None:
@@ -259,6 +271,21 @@ class CausalAnalyzer:
                 st.error(f"❌ Causal discovery failed: {error_msg}")
             return False
     
+    @property
+    def has_discovery_error(self):
+        """Check if discovery failed due to an error"""
+        return self.discovery_results and self.discovery_results.get('error') is not None
+    
+    @property
+    def discovery_error_type(self):
+        """Get the type of discovery error"""
+        return self.discovery_results.get('error') if self.has_discovery_error else None
+    
+    @property
+    def discovery_error_message(self):
+        """Get the discovery error message"""
+        return self.discovery_results.get('error_message') if self.has_discovery_error else None
+
     def _clear_discovery_results(self):
         """Clear all stored discovery results"""
         self.discovery_results = None

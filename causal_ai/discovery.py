@@ -47,28 +47,80 @@ class CausalDiscovery:
                 
                 # Apply constraints if provided
                 model = None
+                constraint_issues = []
+                
                 if constraints:
-                    from causal_ai.discovery_constraints import create_prior_knowledge_matrix
+                    from causal_ai.discovery_constraints import create_prior_knowledge_matrix, validate_constraints_feasibility
                     
                     # Filter constraints to work with available columns
                     filtered_constraints = self._filter_constraints(constraints, columns)
                     
-                    # Use proper DirectLiNGAM prior knowledge matrix
-                    prior_knowledge = create_prior_knowledge_matrix(filtered_constraints, columns)
-                    if prior_knowledge is not None:
-                        print(f"DEBUG: Using prior knowledge matrix")
-                        model = DirectLiNGAM(prior_knowledge=prior_knowledge)
+                    # Validate constraint feasibility before applying
+                    validation_result = validate_constraints_feasibility(filtered_constraints, columns)
+                    
+                    if not validation_result['feasible']:
+                        print(f"DEBUG: ⚠️  Constraint validation failed: {validation_result['issues']}")
+                        constraint_issues = validation_result['issues']
+                        
+                        # Return error instead of auto-fallback
+                        error_msg = "Your domain constraints are too restrictive or conflicting. " + \
+                                   "Please review and modify your constraints, or choose to run without constraints."
+                        
+                        return {
+                            'error': 'constraint_validation_failed',
+                            'error_message': error_msg,
+                            'constraint_issues': constraint_issues,
+                            'columns': columns,
+                            'categorical_mappings': categorical_mappings,
+                            'encoded_data': working_data
+                        }
                     else:
-                        print("DEBUG: Could not create prior knowledge matrix, running without constraints")
-                        model = DirectLiNGAM()
+                        # Use proper DirectLiNGAM prior knowledge matrix
+                        prior_knowledge = create_prior_knowledge_matrix(filtered_constraints, columns)
+                        if prior_knowledge is not None:
+                            print(f"DEBUG: Using validated prior knowledge matrix")
+                            model = DirectLiNGAM(prior_knowledge=prior_knowledge)
+                        else:
+                            print("DEBUG: Could not create prior knowledge matrix")
+                            error_msg = "Failed to create constraint matrix from your domain knowledge. " + \
+                                       "Please check your constraint format or run without constraints."
+                            return {
+                                'error': 'constraint_matrix_failed',
+                                'error_message': error_msg,
+                                'constraint_issues': ["Could not create constraint matrix"],
+                                'columns': columns,
+                                'categorical_mappings': categorical_mappings,
+                                'encoded_data': working_data
+                            }
                 else:
                     print("DEBUG: Running DirectLiNGAM without constraints")
                     model = DirectLiNGAM()
                 
-                # Fit the model
+                # Fit the model with error handling for DirectLiNGAM failures
                 print("DEBUG: Fitting DirectLiNGAM model...")
-                model.fit(working_data)
-                adjacency_matrix = model.adjacency_matrix_
+                try:
+                    model.fit(working_data)
+                    adjacency_matrix = model.adjacency_matrix_
+                except ValueError as e:
+                    if "attempt to get argmax of an empty sequence" in str(e):
+                        print("DEBUG: ⚠️  DirectLiNGAM failed due to overly restrictive constraints")
+                        
+                        # Return error instead of auto-fallback
+                        error_msg = "The DirectLiNGAM algorithm failed, likely due to overly restrictive constraints. " + \
+                                   "Please review your domain constraints or choose to run without constraints."
+                        
+                        return {
+                            'error': 'directlingam_failed',
+                            'error_message': error_msg,
+                            'constraint_issues': ["DirectLiNGAM failed: constraints too restrictive"],
+                            'columns': columns,
+                            'categorical_mappings': categorical_mappings,
+                            'encoded_data': working_data,
+                            'technical_error': str(e)
+                        }
+                    else:
+                        # Re-raise other ValueError types
+                        raise e
                 
                 print(f"DEBUG: DirectLiNGAM produced adjacency matrix shape: {adjacency_matrix.shape}")
                 print(f"DEBUG: DirectLiNGAM adjacency matrix:\n{adjacency_matrix}")
@@ -95,12 +147,15 @@ class CausalDiscovery:
                     print("DEBUG: ✅ DirectLiNGAM produced a valid DAG")
             
             # Return a dictionary with all discovery results
+            unconstrained_run = not bool(constraints)  # True if no constraints provided
             return {
                 'adjacency_matrix': adjacency_matrix,
                 'columns': columns,
                 'categorical_mappings': categorical_mappings,
                 'model': model,
-                'encoded_data': working_data
+                'encoded_data': working_data,
+                'constraint_issues': constraint_issues,
+                'unconstrained_run': unconstrained_run
             }
             
         except Exception as e:

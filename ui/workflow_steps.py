@@ -321,33 +321,111 @@ def render_step3_causal_discovery(analyzer):
             st.session_state['causal_discovery_completed'] = False
             st.session_state['last_action'] = 'discovery_failed'
             
-            # Error message
-            st.error("❌ Causal discovery encountered an error")
-            
-            # Show helpful guidance for next steps
-            with st.expander("💡 Troubleshooting Help", expanded=False):
-                st.markdown("""
-                **Common issues and solutions:**
-                - **Missing dependencies**: Install required packages with `pip install lingam`
-                - **Insufficient data**: Ensure your dataset has at least 2 numeric columns
-                - **Data quality**: Check for missing values, constant columns, or data formatting issues
-                - **Constraints conflicts**: Review your domain constraints for logical inconsistencies
+            # Check if this is a constraint validation error that we can handle
+            if analyzer.has_discovery_error and analyzer.discovery_error_type in ['constraint_validation_failed', 'constraint_matrix_failed', 'directlingam_failed']:
+                # Show constraint-specific error with user options
+                st.error(f"❌ {analyzer.discovery_error_message}")
                 
-                **Next steps:**
-                1. Review the error message above for specific details
-                2. Check your data quality in Step 1
-                3. Simplify or remove domain constraints in Step 2
-                4. Try with a different dataset or data subset
-                """)
+                # Show constraint issues
+                if analyzer.constraint_issues:
+                    with st.expander("⚠️ Constraint Issues Detected", expanded=True):
+                        st.markdown("**Issues found with your domain constraints:**")
+                        for issue in analyzer.constraint_issues:
+                            st.markdown(f"• {issue}")
+                        
+                        st.markdown("""
+                        **Recommendations:**
+                        - Review your domain constraints for logical contradictions
+                        - Consider allowing more edges (fewer forbidden relationships)
+                        - Ensure required edges don't create impossible cycles
+                        - Try the LLM assistant to help refine your constraints
+                        """)
+                
+                # Provide user options
+                st.markdown("### What would you like to do?")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🔧 Modify Constraints", type="secondary", key="modify_constraints_btn"):
+                        st.session_state['last_action'] = 'modify_constraints'
+                        st.info("📝 Please review and modify your constraints in Step 2 above, then try running discovery again.")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🚀 Run Without Constraints", type="primary", key="run_unconstrained_btn"):
+                        with st.spinner("Running causal discovery without constraints..."):
+                            unconstrained_success = analyzer.run_causal_discovery(constraints=None)
+                        
+                        if unconstrained_success:
+                            st.session_state['causal_discovery_completed'] = True
+                            st.session_state['last_action'] = 'unconstrained_discovery_completed'
+                            st.success("🎉 Unconstrained causal discovery completed successfully!")
+                            st.info("📊 Discovery ran without domain constraints - relationships shown are purely data-driven")
+                            st.rerun()
+                        else:
+                            if analyzer.has_discovery_error:
+                                st.error(f"❌ Unconstrained discovery also failed: {analyzer.discovery_error_message}")
+                            else:
+                                st.error("❌ Unconstrained causal discovery encountered an error")
+            else:
+                # General error message for other types of failures
+                st.error("❌ Causal discovery encountered an error")
+                
+                # Show helpful guidance for next steps
+                with st.expander("💡 Troubleshooting Help", expanded=False):
+                    st.markdown("""
+                    **Common issues and solutions:**
+                    - **Missing dependencies**: Install required packages with `pip install lingam`
+                    - **Insufficient data**: Ensure your dataset has at least 10+ samples per variable for reliable results
+                    - **Data quality**: Check for missing values, constant columns, or data formatting issues
+                    - **Constraints conflicts**: Review your domain constraints for logical inconsistencies
+                    - **Too many constraints**: Consider allowing more relationships (fewer forbidden edges)
+                    
+                    **Next steps:**
+                    1. Review the error message above for specific details
+                    2. Check your data quality in Step 1 (ensure sufficient data size)
+                    3. Simplify or remove domain constraints in Step 2
+                    4. Try with a different dataset or data subset
+                    5. Use the constraint validation warnings in Step 2
+                    """)
     
     # Show causal discovery results
     if st.session_state['causal_discovery_completed'] and analyzer.adjacency_matrix is not None:
         st.subheader("📈 Discovered Causal Graph")
         
+        # Show information about the discovery type
+        if analyzer.discovery_results and analyzer.discovery_results.get('unconstrained_run'):
+            # This was an intentionally unconstrained run
+            st.info("📊 **Unconstrained Discovery**: This causal graph was discovered without domain constraints - relationships shown are purely data-driven.")
+        elif analyzer.constraint_issues:
+            # Show any remaining constraint issues
+            with st.container():
+                if analyzer.constraint_issues:
+                    with st.expander("⚠️ Constraint Issues Detected", expanded=False):
+                        st.markdown("**Issues found with your domain constraints:**")
+                        for issue in analyzer.constraint_issues:
+                            st.markdown(f"• {issue}")
+                        
+                        st.markdown("""
+                        **Recommendations:**
+                        - Review your domain constraints for logical contradictions
+                        - Consider allowing more edges (fewer forbidden relationships)
+                        - Ensure required edges don't create impossible cycles
+                        - Try the LLM assistant to help refine your constraints
+                        """)
+        
         # Use columns from discovery (these match the adjacency matrix dimensions)
         if analyzer.columns:
             graph_columns = analyzer.columns
-            st.info(f"📊 Showing relationships between {len(graph_columns)} variables")
+            constraint_info = ""
+            if analyzer.discovery_results and analyzer.discovery_results.get('unconstrained_run'):
+                constraint_info = " (unconstrained discovery - no domain constraints applied)"
+            elif st.session_state.get('constraints_data', {}):
+                constraint_count = len(st.session_state.get('constraints_data', {}).get('forbidden_edges', [])) + len(st.session_state.get('constraints_data', {}).get('required_edges', []))
+                constraint_info = f" (with {constraint_count} domain constraints)"
+            
+            st.info(f"📊 Showing relationships between {len(graph_columns)} variables{constraint_info}")
             
             # Add simplified explanation
             st.markdown("""

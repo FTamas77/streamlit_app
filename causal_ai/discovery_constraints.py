@@ -158,3 +158,126 @@ def validate_constraints(constraints: Dict) -> Dict:
         'warnings': warnings,
         'resolved_constraints': resolved_constraints
     }
+
+def validate_constraints_feasibility(constraints: Dict, columns: List[str]) -> Dict:
+    """
+    Validate if constraints are feasible for causal discovery.
+    
+    This function checks for common issues that cause DirectLiNGAM to fail:
+    1. Too many forbidden edges (making discovery impossible)
+    2. Contradictory constraints (same edge both required and forbidden)
+    3. Potential cycles in required edges
+    4. Complete disconnection of variables
+    5. Data size vs constraint complexity
+    
+    Args:
+        constraints: Dictionary with constraint types
+        columns: List of column names
+        
+    Returns:
+        Dict with validation results:
+        - 'feasible': bool - whether constraints are feasible
+        - 'issues': List[str] - list of identified issues
+    """
+    if not constraints:
+        return {'feasible': True, 'issues': []}
+    
+    issues = []
+    n_variables = len(columns)
+    total_possible_edges = n_variables * (n_variables - 1)  # Directed edges
+    
+    forbidden_edges = constraints.get('forbidden_edges', [])
+    required_edges = constraints.get('required_edges', [])
+    
+    # Check 1: Data size adequacy (new check)
+    if n_variables >= 5:  # Small data warning
+        issues.append(f"Warning: With {n_variables} variables, ensure you have sufficient data (recommend 10+ samples per variable)")
+    
+    # Check 2: Too many forbidden edges
+    forbidden_count = len(forbidden_edges)
+    if forbidden_count > 0.7 * total_possible_edges:  # Reduced threshold
+        issues.append(f"Too many forbidden edges ({forbidden_count}/{total_possible_edges}). This may make causal discovery impossible.")
+    
+    # Check 3: Direct conflicts
+    forbidden_set = set((edge[0], edge[1]) for edge in forbidden_edges)
+    required_set = set((edge[0], edge[1]) for edge in required_edges)
+    
+    conflicts = forbidden_set.intersection(required_set)
+    if conflicts:
+        for conflict in conflicts:
+            issues.append(f"Edge {conflict[0]} -> {conflict[1]} is both required and forbidden")
+    
+    # Check 4: Potential cycles in required edges
+    if len(required_edges) > 1:
+        cycle_issues = _detect_potential_cycles(required_edges)
+        issues.extend(cycle_issues)
+    
+    # Check 5: Complete variable isolation
+    isolation_issues = _detect_isolated_variables(constraints, columns)
+    issues.extend(isolation_issues)
+    
+    # Determine feasibility
+    feasible = len(issues) == 0
+    
+    return {
+        'feasible': feasible,
+        'issues': issues
+    }
+
+
+def _detect_potential_cycles(required_edges: List[List[str]]) -> List[str]:
+    """Detect potential cycles in required edges"""
+    issues = []
+    edge_dict = {}
+    
+    # Build adjacency representation
+    for source, target in required_edges:
+        if source not in edge_dict:
+            edge_dict[source] = []
+        edge_dict[source].append(target)
+    
+    # Simple cycle detection for 2-cycles and 3-cycles
+    for source, target in required_edges:
+        # Check for 2-cycle
+        if target in edge_dict and source in edge_dict[target]:
+            issues.append(f"Required edges create 2-cycle: {source} <-> {target}")
+        
+        # Check for 3-cycle (A->B->C->A)
+        if target in edge_dict:
+            for next_target in edge_dict[target]:
+                if next_target in edge_dict and source in edge_dict[next_target]:
+                    issues.append(f"Required edges may create 3-cycle: {source} -> {target} -> {next_target} -> {source}")
+    
+    return issues
+
+
+def _detect_isolated_variables(constraints: Dict, columns: List[str]) -> List[str]:
+    """Detect variables that become completely isolated due to constraints"""
+    issues = []
+    
+    forbidden_edges = constraints.get('forbidden_edges', [])
+    required_edges = constraints.get('required_edges', [])
+    
+    if not forbidden_edges:
+        return issues
+    
+    # Count connections for each variable
+    var_connections = {col: {'incoming': 0, 'outgoing': 0} for col in columns}
+    
+    # Count forbidden connections
+    for source, target in forbidden_edges:
+        if source in var_connections:
+            var_connections[source]['outgoing'] += 1
+        if target in var_connections:
+            var_connections[target]['incoming'] += 1
+    
+    # Check if any variable has all connections forbidden
+    for var in columns:
+        max_incoming = len(columns) - 1
+        max_outgoing = len(columns) - 1
+        
+        if (var_connections[var]['incoming'] >= max_incoming and 
+            var_connections[var]['outgoing'] >= max_outgoing):
+            issues.append(f"Variable '{var}' has all possible connections forbidden")
+    
+    return issues
