@@ -587,7 +587,7 @@ def render_step5_causal_inference(analyzer):
                             if analyzer.categorical_mappings and treatment_var in analyzer.categorical_mappings:
                                 mapping = analyzer.categorical_mappings[treatment_var]
                                 st.write(f"**Categorical mappings for '{treatment_var}':**")
-                                for original, encoded in mapping['mapping'].items():
+                                for original, encoded in mapping['encoding'].items():
                                     st.write(f"  • {original} → {encoded}")
                             
                             # Show data source information
