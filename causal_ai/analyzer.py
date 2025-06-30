@@ -28,8 +28,14 @@ class CausalAnalyzer:
         self.discovery_results = None    # Properties to access discovery results without redundancy
     @property
     def adjacency_matrix(self):
-        """Get adjacency matrix from discovery results"""
-        return self.discovery_results['adjacency_matrix'] if self.discovery_results else None
+        """Get adjacency matrix from discovery results, handling errors gracefully"""
+        if not self.discovery_results:
+            return None
+        if 'adjacency_matrix' in self.discovery_results:
+            return self.discovery_results['adjacency_matrix']
+        # Optionally, you can log or store the error for UI display
+        self.discovery_error = self.discovery_results.get('error_message', 'Unknown error in causal discovery.')
+        return None
     
     @property
     def columns(self):
