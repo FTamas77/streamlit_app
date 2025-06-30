@@ -162,66 +162,42 @@ def validate_constraints(constraints: Dict) -> Dict:
 def validate_constraints_feasibility(constraints: Dict, columns: List[str]) -> Dict:
     """
     Validate if constraints are feasible for causal discovery.
-    
-    This function checks for common issues that cause DirectLiNGAM to fail:
-    1. Too many forbidden edges (making discovery impossible)
-    2. Contradictory constraints (same edge both required and forbidden)
-    3. Potential cycles in required edges
-    4. Complete disconnection of variables
-    5. Data size vs constraint complexity
-    
-    Args:
-        constraints: Dictionary with constraint types
-        columns: List of column names
-        
-    Returns:
-        Dict with validation results:
-        - 'feasible': bool - whether constraints are feasible
-        - 'issues': List[str] - list of identified issues
+    Only block on fatal issues: direct conflicts, all edges forbidden, or cycles.
     """
     if not constraints:
         return {'feasible': True, 'issues': []}
-    
+
     issues = []
+    warnings = []
     n_variables = len(columns)
     total_possible_edges = n_variables * (n_variables - 1)  # Directed edges
-    
+
     forbidden_edges = constraints.get('forbidden_edges', [])
     required_edges = constraints.get('required_edges', [])
-    
-    # Check 1: Data size adequacy (new check)
-    if n_variables >= 5:  # Small data warning
-        issues.append(f"Warning: With {n_variables} variables, ensure you have sufficient data (recommend 10+ samples per variable)")
-    
-    # Check 2: Too many forbidden edges
+
+    # Fatal: Too many forbidden edges (all edges forbidden)
     forbidden_count = len(forbidden_edges)
-    if forbidden_count > 0.7 * total_possible_edges:  # Reduced threshold
-        issues.append(f"Too many forbidden edges ({forbidden_count}/{total_possible_edges}). This may make causal discovery impossible.")
-    
-    # Check 3: Direct conflicts
+    if forbidden_count >= total_possible_edges:
+        issues.append(f"All edges are forbidden. Causal discovery is impossible.")
+
+    # Fatal: Direct conflicts
     forbidden_set = set((edge[0], edge[1]) for edge in forbidden_edges)
     required_set = set((edge[0], edge[1]) for edge in required_edges)
-    
     conflicts = forbidden_set.intersection(required_set)
     if conflicts:
         for conflict in conflicts:
             issues.append(f"Edge {conflict[0]} -> {conflict[1]} is both required and forbidden")
-    
-    # Check 4: Potential cycles in required edges
+
+    # Fatal: Cycles in required edges
     if len(required_edges) > 1:
         cycle_issues = _detect_potential_cycles(required_edges)
         issues.extend(cycle_issues)
-    
-    # Check 5: Complete variable isolation
-    isolation_issues = _detect_isolated_variables(constraints, columns)
-    issues.extend(isolation_issues)
-    
-    # Determine feasibility
+
     feasible = len(issues) == 0
-    
     return {
         'feasible': feasible,
-        'issues': issues
+        'issues': issues,
+        'warnings': warnings
     }
 
 
