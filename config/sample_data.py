@@ -1,5 +1,10 @@
 """
-Sample Dataset Configurations for Causal AI Platform
+Sample Dataset Configurat    'Manufacturing.csv': {
+        'display_name': '⚙️ Manufacturing Operations (Production Efficiency Analysis)',
+        'description': '''⚙️ **Manufacturing Operations Analysis**: This dataset examines factors 
+                         affecting production efficiency, quality, and costs in manufacturing operations. 
+                         Variables include environmental conditions, equipment status, workforce factors, 
+                         material quality, and operational outcomes.''',or Causal AI Platform
 Metadata and descriptions for demonstration datasets
 """
 
@@ -27,29 +32,28 @@ SAMPLE_DATASETS = {
             'Logistics policy planning',
             'Green transportation initiatives'
         ]
-    }
-}
-
-# ============================================================================
-# DATASET CATEGORIES
-# ============================================================================
-
-DATASET_CATEGORIES = {
-    'environmental': {
-        'icon': '🌱',
-        'description': 'Environmental impact and sustainability datasets'
     },
-    'business': {
-        'icon': '💼', 
-        'description': 'Business operations and performance datasets'
-    },
-    'healthcare': {
-        'icon': '🏥',
-        'description': 'Medical and healthcare outcomes datasets'
-    },
-    'education': {
-        'icon': '🎓',
-        'description': 'Educational outcomes and policy datasets'
+    'Manufacturing.csv': {
+        'display_name': '⚙️ Manufacturing Operations (Production Efficiency Analysis)',
+        'description': '''⚙️ **Manufacturing Operations Analysis**: This dataset examines factors 
+                         affecting production efficiency, quality, and costs in manufacturing operations. 
+                         Variables include environmental conditions, equipment status, workforce factors, 
+                         material quality, and operational outcomes.''',
+        'goal': 'Identify causal factors that optimize production efficiency, reduce defects, and minimize operating costs.',
+        'key_variables': ['Temperature', 'Humidity', 'MachineAge', 'MaintenanceHours', 'ProductionVolume', 'DefectRate', 'OperatingCost'],
+        'expected_insights': [
+            'Equipment maintenance and age significantly impact production quality',
+            'Environmental conditions (temperature, humidity) affect manufacturing processes',
+            'Employee training and experience reduce defect rates',
+            'Raw material quality is a key driver of production outcomes'
+        ],
+        'use_cases': [
+            'Production optimization',
+            'Quality control improvement',
+            'Operational cost reduction',
+            'Equipment maintenance planning',
+            'Workforce training optimization'
+        ]
     }
 }
 

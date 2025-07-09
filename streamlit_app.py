@@ -193,9 +193,10 @@ with tab2:
     # Get list of sample data files
     sample_data_dir = os.path.join(os.path.dirname(__file__), 'sample_data')
     sample_files = []
-    sample_descriptions = {
-        'CO2 SupplyChain Demo.csv': '🌱 Supply Chain CO2 Emissions (Logistics Impact Analysis)'
-    }
+    
+    # Import sample dataset configurations
+    from config.sample_data import SAMPLE_DATASETS
+    sample_descriptions = {filename: config['display_name'] for filename, config in SAMPLE_DATASETS.items()}
     
     if os.path.exists(sample_data_dir):
         for file in os.listdir(sample_data_dir):

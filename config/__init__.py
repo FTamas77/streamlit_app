@@ -24,7 +24,7 @@ from .ui_content import (
 
 # Import sample data configurations (dataset metadata)
 from .sample_data import (
-    SAMPLE_DATASETS, DATASET_CATEGORIES, DATA_GENERATION_CONFIG
+    SAMPLE_DATASETS, DATA_GENERATION_CONFIG
 )
 
 # Make key global items easily accessible
@@ -37,7 +37,7 @@ __all__ = [
     'HERO_SECTION', 'STEP_TITLES', 'MESSAGES', 'HELP_TEXT', 'ERROR_MESSAGES',
     
     # Sample data
-    'SAMPLE_DATASETS', 'DATASET_CATEGORIES'
+    'SAMPLE_DATASETS'
 ]
 
 # Note: Module-specific constants should be imported directly from their modules:
